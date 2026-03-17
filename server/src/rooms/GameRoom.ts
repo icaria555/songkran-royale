@@ -7,6 +7,7 @@ import {
   WATER_COST_PER_SHOT,
   DIRECT_HIT_DAMAGE,
   MAX_WATER_LEVEL,
+  MAX_WET_METER,
   REFILL_RATE_PER_SECOND,
   MATCH_DURATION,
   MAX_INPUT_RATE,
@@ -15,10 +16,14 @@ import {
   MAX_PLAYERS_PER_ROOM,
   COUNTDOWN_SECONDS,
   WATER_STATION_POSITIONS,
+  SPAWN_POSITIONS,
   MAP_WIDTH,
   MAP_HEIGHT,
   PROJECTILE_LIFETIME,
   RECONNECT_GRACE_PERIOD,
+  SLIPPERY_ZONES,
+  SLIPPERY_SPEED_MULTIPLIER,
+  WATER_TRUCK,
 } from "../game/GameConstants";
 import {
   clampPlayerPosition,
@@ -40,22 +45,22 @@ interface JoinOptions {
   nationality: string;
 }
 
-/** Spawn positions spread across the map */
-const SPAWN_POSITIONS = [
-  { x: 150, y: 150 },
-  { x: MAP_WIDTH - 150, y: 150 },
-  { x: 150, y: MAP_HEIGHT - 150 },
-  { x: MAP_WIDTH - 150, y: MAP_HEIGHT - 150 },
-  { x: MAP_WIDTH / 2, y: 150 },
-  { x: MAP_WIDTH / 2, y: MAP_HEIGHT - 150 },
-  { x: 150, y: MAP_HEIGHT / 2 },
-  { x: MAP_WIDTH - 150, y: MAP_HEIGHT / 2 },
-];
+// SPAWN_POSITIONS imported from GameConstants (Chiang Mai map layout)
+
+/** Check if a point is inside a rect {x,y,w,h} where x,y = center */
+function pointInRect(px: number, py: number, rect: { x: number; y: number; w: number; h: number }): boolean {
+  const halfW = rect.w / 2;
+  const halfH = rect.h / 2;
+  return px >= rect.x - halfW && px <= rect.x + halfW && py >= rect.y - halfH && py <= rect.y + halfH;
+}
 
 export class GameRoom extends Room<{ state: GameState }> {
   private projectileIdCounter = 0;
   private projectileTimers = new Map<string, number>(); // id → creation timestamp
   private countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private waterTruckX: number | null = null; // null = not active
+  private waterTruckTimer = 0; // ms since last truck
+  private waterTruckWarned = false;
 
   onCreate(_options?: Record<string, unknown>): void {
     this.setState(new GameState());
@@ -279,6 +284,21 @@ export class GameRoom extends Room<{ state: GameState }> {
       player.x = resolved.x;
       player.y = resolved.y;
 
+      // Slippery zone check — reduce effective movement speed
+      let inSlippery = false;
+      for (const zone of SLIPPERY_ZONES) {
+        if (pointInRect(player.x, player.y, zone)) {
+          inSlippery = true;
+          break;
+        }
+      }
+      if (inSlippery) {
+        // Retroactively reduce movement: lerp back toward prevX/prevY
+        const factor = SLIPPERY_SPEED_MULTIPLIER;
+        player.x = prevX + (player.x - prevX) * factor;
+        player.y = prevY + (player.y - prevY) * factor;
+      }
+
       // Water refill check
       const stationIdx = getRefillStationIndex(player.x, player.y);
       if (stationIdx >= 0) {
@@ -336,6 +356,44 @@ export class GameRoom extends Room<{ state: GameState }> {
     for (const id of toRemove) {
       this.state.projectiles.delete(id);
       this.projectileTimers.delete(id);
+    }
+
+    // ── Water Truck Hazard ──────────────────────────────────────
+    this.waterTruckTimer += deltaTime;
+
+    if (this.waterTruckX === null) {
+      // Truck not active — check if it's time to spawn
+      if (this.waterTruckTimer >= WATER_TRUCK.intervalMs) {
+        // Send warning first
+        if (!this.waterTruckWarned && this.waterTruckTimer >= WATER_TRUCK.intervalMs - WATER_TRUCK.warningMs) {
+          this.waterTruckWarned = true;
+          this.broadcast("waterTruckWarning", {});
+        }
+        this.waterTruckX = WATER_TRUCK.startX;
+        this.waterTruckTimer = 0;
+        this.waterTruckWarned = false;
+      }
+    } else {
+      // Truck is active — move it
+      this.waterTruckX += WATER_TRUCK.speed * dt;
+      this.broadcast("waterTruckPos", { x: this.waterTruckX, y: WATER_TRUCK.y });
+
+      // Check if any player is in the truck's path
+      this.state.players.forEach((player) => {
+        if (!player.isAlive) return;
+        if (Math.abs(player.y - WATER_TRUCK.y) < WATER_TRUCK.hitRadius &&
+            Math.abs(player.x - this.waterTruckX!) < 64) {
+          player.wetMeter = Math.min(MAX_WET_METER, player.wetMeter + WATER_TRUCK.wetDamage);
+          if (player.wetMeter >= MAX_WET_METER) {
+            player.isAlive = false;
+          }
+        }
+      });
+
+      // Remove truck when off-screen
+      if (this.waterTruckX > WATER_TRUCK.endX) {
+        this.waterTruckX = null;
+      }
     }
 
     // Check win condition

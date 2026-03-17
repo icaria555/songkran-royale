@@ -47,12 +47,9 @@ describe("Hit Detection — projectile vs player", () => {
 
 describe("Hit Detection — projectile vs wall", () => {
   it("projectile inside map does not collide with wall", () => {
-    // Center of map, far from any wall or obstacle
-    const collides = projectileCollidesWithWall(600, 450);
-    // Might collide with the center obstacle at (600,450,128,64)
-    // Let's pick a safe spot
-    const collidesAtSafe = projectileCollidesWithWall(150, 450);
-    expect(collidesAtSafe).toBe(false);
+    // Pick a spot clear of any obstacle — open road area
+    const collides = projectileCollidesWithWall(500, 480);
+    expect(collides).toBe(false);
   });
 
   it("projectile at left wall boundary collides", () => {
@@ -76,9 +73,9 @@ describe("Hit Detection — projectile vs wall", () => {
   });
 
   it("projectile hitting an obstacle collides", () => {
-    // First obstacle is at { x: 400, y: 300, w: 64, h: 128 }
-    // Its center is (400, 300), so placing projectile right at center should collide
-    const collides = projectileCollidesWithWall(400, 300);
+    // First obstacle is NW shop block at { x: 176, y: 96, w: 96, h: 96 }
+    // Its center is (176, 96), so placing projectile right at center should collide
+    const collides = projectileCollidesWithWall(176, 96);
     expect(collides).toBe(true);
   });
 });

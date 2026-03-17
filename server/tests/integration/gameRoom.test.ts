@@ -27,6 +27,7 @@ function createMockClient(sessionId: string) {
     raw: vi.fn(),
     error: vi.fn(),
     close: vi.fn(),
+    enqueueRaw: vi.fn(),
     ref: {} as any,
     auth: {},
     userData: undefined as unknown,

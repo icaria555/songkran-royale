@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { soundManager } from "../audio/SoundManager";
 
 interface ResultData {
   winner: string;
@@ -28,6 +29,9 @@ export class ResultScene extends Phaser.Scene {
     const isWinner = this.result.winner === this.result.playerName;
 
     this.cameras.main.setBackgroundColor(0x0a2540);
+
+    // Play victory or defeat sound
+    soundManager.play(isWinner ? "victory" : "defeat");
 
     // Title
     this.add
@@ -108,6 +112,7 @@ export class ResultScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     playAgainBtn.on("pointerdown", () => {
+      soundManager.play("button_click");
       this.scene.start("CharacterScene");
     });
 
@@ -125,6 +130,7 @@ export class ResultScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     mainMenuBtn.on("pointerdown", () => {
+      soundManager.play("button_click");
       this.scene.start("CharacterScene");
     });
 

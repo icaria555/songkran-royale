@@ -4,6 +4,14 @@ import { DummyAI } from "../game/DummyAI";
 import { WaterStation } from "../game/WaterStation";
 import { HUD } from "../ui/HUD";
 import { PROJECTILE_SPEED, MATCH_DURATION, PROJECTILE_POOL_SIZE } from "../game/GameLogic";
+import { soundManager } from "../audio/SoundManager";
+import {
+  splashOnHit,
+  shootMuzzle,
+  refillBubbles,
+  eliminationBurst,
+  ambientDrips,
+} from "../effects/ParticleEffects";
 
 interface GameData {
   character: string;
@@ -22,6 +30,10 @@ export class GameScene extends Phaser.Scene {
   private timeLeft = MATCH_DURATION;
   private gameOver = false;
   private gameData!: GameData;
+  private wasRefilling = false;
+  private waterLowPlayed = false;
+  private muteButton!: Phaser.GameObjects.Text;
+  private refillBubbleTimer = 0;
 
   constructor() {
     super({ key: "GameScene" });
@@ -101,10 +113,13 @@ export class GameScene extends Phaser.Scene {
       (_aiSprite, bullet) => {
         (bullet as Phaser.Physics.Arcade.Sprite).disableBody(true, true);
         this.ai.takeDamage(true);
-        this.spawnHitEffect(this.ai.sprite.x, this.ai.sprite.y);
+        splashOnHit(this, this.ai.sprite.x, this.ai.sprite.y);
+        soundManager.play("hit");
 
         if (!this.ai.isAlive) {
           this.player.score += 1;
+          eliminationBurst(this, this.ai.sprite.x, this.ai.sprite.y);
+          soundManager.play("elimination");
           this.endGame(this.gameData.nickname);
         }
       }
@@ -117,6 +132,8 @@ export class GameScene extends Phaser.Scene {
       (_playerSprite, bullet) => {
         (bullet as Phaser.Physics.Arcade.Sprite).disableBody(true, true);
         this.player.takeDamage(true);
+        splashOnHit(this, this.player.sprite.x, this.player.sprite.y);
+        soundManager.play("hit");
 
         // Flash player red
         this.player.sprite.setTint(0xff0000);
@@ -125,6 +142,8 @@ export class GameScene extends Phaser.Scene {
         });
 
         if (!this.player.isAlive) {
+          eliminationBurst(this, this.player.sprite.x, this.player.sprite.y);
+          soundManager.play("elimination");
           this.endGame("Bot สมชาย");
         }
       }
@@ -132,20 +151,44 @@ export class GameScene extends Phaser.Scene {
 
     // Bullets hit walls
     this.physics.add.collider(this.projectiles, this.walls, (_wall, bullet) => {
-      (bullet as Phaser.Physics.Arcade.Sprite).disableBody(true, true);
+      const b = bullet as Phaser.Physics.Arcade.Sprite;
+      splashOnHit(this, b.x, b.y);
+      b.disableBody(true, true);
     });
     this.physics.add.collider(this.aiProjectiles, this.walls, (_wall, bullet) => {
-      (bullet as Phaser.Physics.Arcade.Sprite).disableBody(true, true);
+      const b = bullet as Phaser.Physics.Arcade.Sprite;
+      splashOnHit(this, b.x, b.y);
+      b.disableBody(true, true);
     });
 
     // Mouse shoot
-    this.input.on("pointerdown", () => {
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (this.gameOver) return;
+      // Ignore clicks on the mute button area (top-right)
+      if (pointer.x > this.scale.width - 50 && pointer.y < 40) return;
       this.playerShoot();
     });
 
     // HUD
     this.hud = new HUD(this);
+
+    // Mute button (top-right)
+    this.muteButton = this.add
+      .text(this.scale.width - 20, 16, soundManager.isMuted() ? "🔇" : "🔊", {
+        fontSize: "20px",
+      })
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0)
+      .setDepth(101)
+      .setInteractive({ useHandCursor: true });
+
+    this.muteButton.on("pointerdown", () => {
+      soundManager.toggleMute();
+      this.muteButton.setText(soundManager.isMuted() ? "🔇" : "🔊");
+    });
+
+    // Initialize sound manager (in case not already done)
+    soundManager.init();
 
     // Camera follow player
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
@@ -191,8 +234,9 @@ export class GameScene extends Phaser.Scene {
       this.player.sprite.y
     );
 
-    // AI shooting
+    // AI shooting with muzzle effect
     if (aiShootAngle !== null) {
+      shootMuzzle(this, this.ai.sprite.x, this.ai.sprite.y, aiShootAngle);
       this.fireProjectile(
         this.aiProjectiles,
         this.ai.sprite.x,
@@ -222,6 +266,42 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Refill sound management
+    if (playerRefilling && !this.wasRefilling) {
+      soundManager.play("refill");
+    } else if (!playerRefilling && this.wasRefilling) {
+      soundManager.stopRefill();
+    }
+    this.wasRefilling = playerRefilling;
+
+    // Refill bubble particles (throttled)
+    this.refillBubbleTimer += delta;
+    if (this.refillBubbleTimer >= 150) {
+      this.refillBubbleTimer = 0;
+      if (playerRefilling) {
+        refillBubbles(this, this.player.sprite.x, this.player.sprite.y);
+      }
+      if (aiRefilling) {
+        refillBubbles(this, this.ai.sprite.x, this.ai.sprite.y);
+      }
+    }
+
+    // Ambient drip particles for high wet meter
+    if (this.player.wetMeter > 50) {
+      ambientDrips(this, this.player.sprite.x, this.player.sprite.y);
+    }
+    if (this.ai.wetMeter > 50) {
+      ambientDrips(this, this.ai.sprite.x, this.ai.sprite.y);
+    }
+
+    // Water low warning
+    if (this.player.waterLevel < 20 && !this.waterLowPlayed) {
+      soundManager.play("water_low");
+      this.waterLowPlayed = true;
+    } else if (this.player.waterLevel >= 20) {
+      this.waterLowPlayed = false;
+    }
+
     // HUD updates
     this.hud.updateWetMeter(this.player.wetMeter);
     this.hud.updateWaterTank(this.player.waterLevel);
@@ -235,12 +315,16 @@ export class GameScene extends Phaser.Scene {
 
   private playerShoot(): void {
     if (!this.player.tryShoot()) return;
+    soundManager.play("shoot");
+
+    const angle = this.player.getAimAngle();
+    shootMuzzle(this, this.player.sprite.x, this.player.sprite.y, angle);
 
     this.fireProjectile(
       this.projectiles,
       this.player.sprite.x,
       this.player.sprite.y,
-      this.player.getAimAngle()
+      angle
     );
   }
 
@@ -289,27 +373,6 @@ export class GameScene extends Phaser.Scene {
         sprite.disableBody(true, true);
       }
     });
-  }
-
-  private spawnHitEffect(x: number, y: number): void {
-    // Simple splash particles
-    for (let i = 0; i < 6; i++) {
-      const angle = (Math.PI * 2 * i) / 6;
-      const particle = this.add
-        .circle(x, y, 3, 0x3ab5f5, 0.8)
-        .setDepth(20);
-
-      this.tweens.add({
-        targets: particle,
-        x: x + Math.cos(angle) * 30,
-        y: y + Math.sin(angle) * 30,
-        alpha: 0,
-        scale: 0.5,
-        duration: 300,
-        ease: "Power2",
-        onComplete: () => particle.destroy(),
-      });
-    }
   }
 
   private createWalls(mapWidth: number, mapHeight: number): void {

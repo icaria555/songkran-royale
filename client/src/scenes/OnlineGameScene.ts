@@ -5,6 +5,14 @@ import { WaterStation } from "../game/WaterStation";
 import { HUD } from "../ui/HUD";
 import { PLAYER_SPEED } from "../game/GameLogic";
 import { reconnect, setCurrentRoom, leaveRoom } from "../network/ColyseusClient";
+import { soundManager } from "../audio/SoundManager";
+import {
+  splashOnHit,
+  shootMuzzle,
+  refillBubbles,
+  eliminationBurst,
+  ambientDrips,
+} from "../effects/ParticleEffects";
 
 interface OnlineGameData {
   character: string;
@@ -53,6 +61,10 @@ export class OnlineGameScene extends Phaser.Scene {
   private reconnectOverlay: Phaser.GameObjects.Rectangle | null = null;
   private reconnectText: Phaser.GameObjects.Text | null = null;
   private isReconnecting = false;
+  private wasRefilling = false;
+  private waterLowPlayed = false;
+  private muteButton!: Phaser.GameObjects.Text;
+  private refillBubbleTimer = 0;
 
   constructor() {
     super({ key: "OnlineGameScene" });
@@ -103,14 +115,38 @@ export class OnlineGameScene extends Phaser.Scene {
     };
 
     // Mouse shoot
-    this.input.on("pointerdown", () => {
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (!this.gameOver && !this.isReconnecting) {
+        // Ignore clicks on mute button area
+        if (pointer.x > this.scale.width - 50 && pointer.y < 40) return;
         this.room.send("shoot", {});
+        soundManager.play("shoot");
+        if (this.localSprite) {
+          shootMuzzle(this, this.localSprite.x, this.localSprite.y, this.aimAngle);
+        }
       }
     });
 
     // HUD
     this.hud = new HUD(this);
+
+    // Mute button (top-right)
+    this.muteButton = this.add
+      .text(this.scale.width - 20, 16, soundManager.isMuted() ? "🔇" : "🔊", {
+        fontSize: "20px",
+      })
+      .setOrigin(0.5, 0)
+      .setScrollFactor(0)
+      .setDepth(101)
+      .setInteractive({ useHandCursor: true });
+
+    this.muteButton.on("pointerdown", () => {
+      soundManager.toggleMute();
+      this.muteButton.setText(soundManager.isMuted() ? "🔇" : "🔊");
+    });
+
+    // Initialize sound manager
+    soundManager.init();
 
     // Camera
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
@@ -169,10 +205,19 @@ export class OnlineGameScene extends Phaser.Scene {
         });
         player.listen("waterLevel", (value: number) => {
           this.hud.updateWaterTank(value);
+          // Water low warning
+          if (value < 20 && !this.waterLowPlayed) {
+            soundManager.play("water_low");
+            this.waterLowPlayed = true;
+          } else if (value >= 20) {
+            this.waterLowPlayed = false;
+          }
         });
         player.listen("isAlive", (alive: boolean) => {
           if (!alive) {
             this.localSprite.setAlpha(0.3);
+            eliminationBurst(this, this.localSprite.x, this.localSprite.y);
+            soundManager.play("elimination");
           }
         });
       } else {
@@ -203,12 +248,24 @@ export class OnlineGameScene extends Phaser.Scene {
         });
         player.listen("isAlive", (alive: boolean) => {
           const r = this.remotePlayers.get(sessionId);
-          if (r) r.setAlive(alive);
+          if (r) {
+            r.setAlive(alive);
+            if (!alive) {
+              eliminationBurst(this, r.sprite.x, r.sprite.y);
+            }
+          }
+          if (!alive) {
+            soundManager.play("elimination");
+          }
         });
         player.listen("wetMeter", (wet: number) => {
           if (wet > (player.previousWet || 0)) {
             const r = this.remotePlayers.get(sessionId);
-            if (r) r.flashHit();
+            if (r) {
+              r.flashHit();
+              splashOnHit(this, r.sprite.x, r.sprite.y);
+            }
+            soundManager.play("hit");
           }
           (player as any).previousWet = wet;
         });
@@ -246,7 +303,7 @@ export class OnlineGameScene extends Phaser.Scene {
     room.state.projectiles.onRemove((_proj: any, id: string) => {
       const sprite = this.projectileSprites.get(id);
       if (sprite) {
-        this.spawnHitEffect(sprite.x, sprite.y);
+        splashOnHit(this, sprite.x, sprite.y);
         sprite.destroy();
         this.projectileSprites.delete(id);
       }
@@ -254,6 +311,12 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Game phase changes
     room.state.listen("phase", (phase: string) => {
+      if (phase === "countdown") {
+        soundManager.play("countdown_tick");
+      }
+      if (phase === "playing") {
+        soundManager.play("match_start");
+      }
       if (phase === "ended") {
         this.gameOver = true;
         const winnerId = room.state.winnerId;
@@ -479,34 +542,48 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Water station highlight
     if (serverPlayer) {
+      const isRefilling = this.waterStations.some((s) =>
+        s.isPlayerInRange(this.localSprite.x, this.localSprite.y)
+      );
       for (const station of this.waterStations) {
         station.setHighlight(
           station.isPlayerInRange(this.localSprite.x, this.localSprite.y)
         );
       }
-      this.hud.showRefilling(
-        this.waterStations.some((s) =>
-          s.isPlayerInRange(this.localSprite.x, this.localSprite.y)
-        )
-      );
-    }
-  }
 
-  private spawnHitEffect(x: number, y: number): void {
-    for (let i = 0; i < 6; i++) {
-      const angle = (Math.PI * 2 * i) / 6;
-      const particle = this.add.circle(x, y, 3, 0x3ab5f5, 0.8).setDepth(20);
-      this.tweens.add({
-        targets: particle,
-        x: x + Math.cos(angle) * 30,
-        y: y + Math.sin(angle) * 30,
-        alpha: 0,
-        scale: 0.5,
-        duration: 300,
-        ease: "Power2",
-        onComplete: () => particle.destroy(),
-      });
+      // Refill sound management
+      if (isRefilling && !this.wasRefilling) {
+        soundManager.play("refill");
+      } else if (!isRefilling && this.wasRefilling) {
+        soundManager.stopRefill();
+      }
+      this.wasRefilling = isRefilling;
+
+      this.hud.showRefilling(isRefilling);
+
+      // Refill bubble particles (throttled)
+      this.refillBubbleTimer += delta;
+      if (this.refillBubbleTimer >= 150) {
+        this.refillBubbleTimer = 0;
+        if (isRefilling) {
+          refillBubbles(this, this.localSprite.x, this.localSprite.y);
+        }
+      }
+
+      // Ambient drip particles for high wet meter
+      if (serverPlayer.wetMeter > 50) {
+        ambientDrips(this, this.localSprite.x, this.localSprite.y);
+      }
     }
+
+    // Ambient drips on remote players with high wet meter
+    this.remotePlayers.forEach((remote) => {
+      // We don't have direct access to wetMeter on remote, so drip based on alpha
+      // (alpha < 1 means they've been hit)
+      if (remote.sprite.alpha < 0.8 && remote.sprite.alpha > 0.2) {
+        ambientDrips(this, remote.sprite.x, remote.sprite.y);
+      }
+    });
   }
 
   private createWalls(mapWidth: number, mapHeight: number): void {

@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { soundManager } from "../audio/SoundManager";
 
 interface CharacterOption {
   key: string;
@@ -156,7 +157,11 @@ export class CharacterScene extends Phaser.Scene {
           .setOrigin(0, 0.5);
       });
 
-      box.on("pointerdown", () => this.selectCharacter(i));
+      box.on("pointerdown", () => {
+        soundManager.init();
+        soundManager.play("button_click");
+        this.selectCharacter(i);
+      });
     });
 
     // Nationality section
@@ -199,6 +204,8 @@ export class CharacterScene extends Phaser.Scene {
       this.nationTexts.push(txt);
 
       bg.on("pointerdown", () => {
+        soundManager.init();
+        soundManager.play("button_click");
         this.selectedNation = i;
         this.refreshNationUI();
       });
@@ -285,7 +292,11 @@ export class CharacterScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    ctaBg.on("pointerdown", () => this.startGame());
+    ctaBg.on("pointerdown", () => {
+      soundManager.init();
+      soundManager.play("button_click");
+      this.startGame();
+    });
 
     // Note: ENTER is handled in the keyboard input handler above
   }
