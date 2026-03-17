@@ -4,6 +4,7 @@ import { RemotePlayer } from "../game/RemotePlayer";
 import { WaterStation } from "../game/WaterStation";
 import { HUD } from "../ui/HUD";
 import { PLAYER_SPEED } from "../game/GameLogic";
+import { reconnect, setCurrentRoom, leaveRoom } from "../network/ColyseusClient";
 
 interface OnlineGameData {
   character: string;
@@ -11,6 +12,9 @@ interface OnlineGameData {
   nickname: string;
   room: Room;
 }
+
+const RECONNECT_TIMEOUT_MS = 30_000;
+const RECONNECT_RETRY_INTERVAL_MS = 2_000;
 
 export class OnlineGameScene extends Phaser.Scene {
   private room!: Room;
@@ -45,6 +49,11 @@ export class OnlineGameScene extends Phaser.Scene {
 
   private gameOver = false;
 
+  // Reconnect overlay
+  private reconnectOverlay: Phaser.GameObjects.Rectangle | null = null;
+  private reconnectText: Phaser.GameObjects.Text | null = null;
+  private isReconnecting = false;
+
   constructor() {
     super({ key: "OnlineGameScene" });
   }
@@ -54,6 +63,7 @@ export class OnlineGameScene extends Phaser.Scene {
     this.room = data.room;
     this.sessionId = data.room.sessionId;
     this.gameOver = false;
+    this.isReconnecting = false;
     this.remotePlayers.clear();
     this.projectileSprites.clear();
   }
@@ -94,7 +104,7 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Mouse shoot
     this.input.on("pointerdown", () => {
-      if (!this.gameOver) {
+      if (!this.gameOver && !this.isReconnecting) {
         this.room.send("shoot", {});
       }
     });
@@ -116,31 +126,42 @@ export class OnlineGameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(100);
 
-    // ── Wire up Colyseus state listeners ──────────────────────
+    // Wire up Colyseus state listeners
+    this.wireRoomListeners(this.room);
+  }
 
+  // ── Room listener wiring (reusable for reconnect) ────────────
+
+  private wireRoomListeners(room: Room): void {
     // Player added
-    this.room.state.players.onAdd((player: any, sessionId: string) => {
+    room.state.players.onAdd((player: any, sessionId: string) => {
       if (sessionId === this.sessionId) {
         // Local player
-        this.localSprite = this.physics.add
-          .sprite(player.x, player.y, `char_${player.character}`)
-          .setScale(4)
-          .setDepth(10);
-        this.localSprite.body!.setSize(12, 12);
-        this.localSprite.body!.setOffset(2, 2);
+        if (!this.localSprite || !this.localSprite.active) {
+          this.localSprite = this.physics.add
+            .sprite(player.x, player.y, `char_${player.character}`)
+            .setScale(4)
+            .setDepth(10);
+          this.localSprite.body!.setSize(12, 12);
+          this.localSprite.body!.setOffset(2, 2);
 
-        this.localLabel = this.add
-          .text(player.x, player.y - 40, player.nickname, {
-            fontSize: "10px",
-            color: "#e8f4ff",
-            fontFamily: "Kanit, sans-serif",
-            stroke: "#000000",
-            strokeThickness: 2,
-          })
-          .setOrigin(0.5, 1)
-          .setDepth(11);
+          this.localLabel = this.add
+            .text(player.x, player.y - 40, player.nickname, {
+              fontSize: "10px",
+              color: "#e8f4ff",
+              fontFamily: "Kanit, sans-serif",
+              stroke: "#000000",
+              strokeThickness: 2,
+            })
+            .setOrigin(0.5, 1)
+            .setDepth(11);
 
-        this.cameras.main.startFollow(this.localSprite, true, 0.08, 0.08);
+          this.cameras.main.startFollow(this.localSprite, true, 0.08, 0.08);
+        } else {
+          // Reconnect — snap to server position
+          this.localSprite.setPosition(player.x, player.y);
+          this.localSprite.setAlpha(player.isAlive ? 1 : 0.3);
+        }
 
         // Listen for state changes on local player
         player.listen("wetMeter", (value: number) => {
@@ -156,29 +177,38 @@ export class OnlineGameScene extends Phaser.Scene {
         });
       } else {
         // Remote player
-        const remote = new RemotePlayer(
-          this,
-          sessionId,
-          player.x,
-          player.y,
-          player.character,
-          player.nickname
-        );
-        this.remotePlayers.set(sessionId, remote);
+        const existing = this.remotePlayers.get(sessionId);
+        if (existing) {
+          existing.setTargetPosition(player.x, player.y);
+        } else {
+          const remote = new RemotePlayer(
+            this,
+            sessionId,
+            player.x,
+            player.y,
+            player.character,
+            player.nickname
+          );
+          this.remotePlayers.set(sessionId, remote);
+        }
 
         // Listen for position changes
         player.listen("x", (x: number) => {
-          remote.setTargetPosition(x, player.y);
+          const r = this.remotePlayers.get(sessionId);
+          if (r) r.setTargetPosition(x, player.y);
         });
         player.listen("y", (y: number) => {
-          remote.setTargetPosition(player.x, y);
+          const r = this.remotePlayers.get(sessionId);
+          if (r) r.setTargetPosition(player.x, y);
         });
         player.listen("isAlive", (alive: boolean) => {
-          remote.setAlive(alive);
+          const r = this.remotePlayers.get(sessionId);
+          if (r) r.setAlive(alive);
         });
         player.listen("wetMeter", (wet: number) => {
           if (wet > (player.previousWet || 0)) {
-            remote.flashHit();
+            const r = this.remotePlayers.get(sessionId);
+            if (r) r.flashHit();
           }
           (player as any).previousWet = wet;
         });
@@ -186,7 +216,7 @@ export class OnlineGameScene extends Phaser.Scene {
     });
 
     // Player removed
-    this.room.state.players.onRemove((_player: any, sessionId: string) => {
+    room.state.players.onRemove((_player: any, sessionId: string) => {
       const remote = this.remotePlayers.get(sessionId);
       if (remote) {
         remote.destroy();
@@ -195,14 +225,13 @@ export class OnlineGameScene extends Phaser.Scene {
     });
 
     // Projectile added
-    this.room.state.projectiles.onAdd((proj: any, id: string) => {
+    room.state.projectiles.onAdd((proj: any, id: string) => {
       const sprite = this.add
         .sprite(proj.x, proj.y, "water_bullet")
         .setScale(2)
         .setDepth(5);
       this.projectileSprites.set(id, sprite);
 
-      // Track position changes
       proj.listen("x", (x: number) => {
         const s = this.projectileSprites.get(id);
         if (s) s.x = x;
@@ -214,10 +243,9 @@ export class OnlineGameScene extends Phaser.Scene {
     });
 
     // Projectile removed
-    this.room.state.projectiles.onRemove((_proj: any, id: string) => {
+    room.state.projectiles.onRemove((_proj: any, id: string) => {
       const sprite = this.projectileSprites.get(id);
       if (sprite) {
-        // Splash effect
         this.spawnHitEffect(sprite.x, sprite.y);
         sprite.destroy();
         this.projectileSprites.delete(id);
@@ -225,21 +253,21 @@ export class OnlineGameScene extends Phaser.Scene {
     });
 
     // Game phase changes
-    this.room.state.listen("phase", (phase: string) => {
+    room.state.listen("phase", (phase: string) => {
       if (phase === "ended") {
         this.gameOver = true;
-        const winnerId = this.room.state.winnerId;
-        const winner = this.room.state.players.get(winnerId);
+        const winnerId = room.state.winnerId;
+        const winner = room.state.players.get(winnerId);
         const winnerName = winner?.nickname || "Unknown";
         const isMe = winnerId === this.sessionId;
 
         this.hud.showStatus(
-          isMe ? "🏆 จ้าวแห่งสงกรานต์!" : `💀 ${winnerName} ชนะ!`
+          isMe ? "จ้าวแห่งสงกรานต์!" : `${winnerName} wins!`
         );
 
         this.time.delayedCall(3000, () => {
-          const localPlayer = this.room.state.players.get(this.sessionId);
-          this.room.leave();
+          const localPlayer = room.state.players.get(this.sessionId);
+          room.leave();
           this.scene.start("ResultScene", {
             winner: winnerName,
             playerName: this.gameData.nickname,
@@ -248,30 +276,142 @@ export class OnlineGameScene extends Phaser.Scene {
             playerWet: localPlayer?.wetMeter || 0,
             playerScore: localPlayer?.score || 0,
             aiWet: 0,
-            timeLeft: this.room.state.timeLeft,
+            timeLeft: room.state.timeLeft,
           });
         });
       }
     });
 
     // Timer
-    this.room.state.listen("timeLeft", (time: number) => {
+    room.state.listen("timeLeft", (time: number) => {
       this.hud.updateTimer(time);
     });
 
-    // Handle disconnect
-    this.room.onLeave((code) => {
+    // Handle disconnect — attempt reconnect
+    room.onLeave((code) => {
       if (!this.gameOver && this.scene.isActive("OnlineGameScene")) {
-        this.hud.showStatus("❌ Disconnected");
-        this.time.delayedCall(2000, () => {
-          this.scene.start("CharacterScene");
-        });
+        this.startReconnect();
       }
     });
   }
 
+  // ── Reconnect handling ───────────────────────────────────────
+
+  private startReconnect(): void {
+    if (this.isReconnecting) return;
+    this.isReconnecting = true;
+
+    // Show overlay
+    this.showReconnectOverlay();
+
+    const startTime = Date.now();
+
+    const attemptReconnect = async () => {
+      if (this.gameOver || !this.scene.isActive("OnlineGameScene")) {
+        this.isReconnecting = false;
+        return;
+      }
+
+      const elapsed = Date.now() - startTime;
+      if (elapsed >= RECONNECT_TIMEOUT_MS) {
+        // Give up
+        this.isReconnecting = false;
+        this.hideReconnectOverlay();
+        leaveRoom();
+        this.scene.start("ResultScene", {
+          winner: "Disconnected",
+          playerName: this.gameData.nickname,
+          playerChar: this.gameData.character,
+          playerNat: this.gameData.nationality,
+          playerWet: 0,
+          playerScore: 0,
+          aiWet: 0,
+          timeLeft: 0,
+        });
+        return;
+      }
+
+      // Update overlay text
+      const remaining = Math.ceil((RECONNECT_TIMEOUT_MS - elapsed) / 1000);
+      if (this.reconnectText) {
+        this.reconnectText.setText(
+          `Reconnecting... (${remaining}s)\nกำลังเชื่อมต่อใหม่...`
+        );
+      }
+
+      try {
+        const newRoom = await reconnect();
+        if (newRoom) {
+          // Success
+          this.room = newRoom;
+          this.sessionId = newRoom.sessionId;
+          setCurrentRoom(newRoom);
+          this.isReconnecting = false;
+          this.hideReconnectOverlay();
+
+          // Re-wire listeners on the new room
+          this.wireRoomListeners(newRoom);
+          return;
+        }
+      } catch (err) {
+        console.warn("Reconnect attempt failed:", err);
+      }
+
+      // Retry after interval
+      this.time.delayedCall(RECONNECT_RETRY_INTERVAL_MS, attemptReconnect);
+    };
+
+    attemptReconnect();
+  }
+
+  private showReconnectOverlay(): void {
+    if (this.reconnectOverlay) return;
+
+    this.reconnectOverlay = this.add
+      .rectangle(
+        this.scale.width / 2,
+        this.scale.height / 2,
+        this.scale.width,
+        this.scale.height,
+        0x000000,
+        0.7
+      )
+      .setScrollFactor(0)
+      .setDepth(200);
+
+    this.reconnectText = this.add
+      .text(
+        this.scale.width / 2,
+        this.scale.height / 2,
+        "Reconnecting...\nกำลังเชื่อมต่อใหม่...",
+        {
+          fontSize: "20px",
+          color: "#f5c842",
+          fontFamily: "Kanit, sans-serif",
+          fontStyle: "bold",
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(201);
+  }
+
+  private hideReconnectOverlay(): void {
+    if (this.reconnectOverlay) {
+      this.reconnectOverlay.destroy();
+      this.reconnectOverlay = null;
+    }
+    if (this.reconnectText) {
+      this.reconnectText.destroy();
+      this.reconnectText = null;
+    }
+  }
+
+  // ── Game loop ────────────────────────────────────────────────
+
   update(_time: number, delta: number): void {
-    if (this.gameOver) return;
+    if (this.gameOver || this.isReconnecting) return;
     if (!this.localSprite) return;
 
     // Update local player position from server state

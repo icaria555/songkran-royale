@@ -18,6 +18,7 @@ import {
   MAP_WIDTH,
   MAP_HEIGHT,
   PROJECTILE_LIFETIME,
+  RECONNECT_GRACE_PERIOD,
 } from "../game/GameConstants";
 import {
   clampPlayerPosition,
@@ -56,7 +57,7 @@ export class GameRoom extends Room<{ state: GameState }> {
   private projectileTimers = new Map<string, number>(); // id → creation timestamp
   private countdownInterval: ReturnType<typeof setInterval> | null = null;
 
-  onCreate(): void {
+  onCreate(_options?: Record<string, unknown>): void {
     this.setState(new GameState());
     this.maxClients = MAX_PLAYERS_PER_ROOM;
 
@@ -114,13 +115,46 @@ export class GameRoom extends Room<{ state: GameState }> {
     console.log(`[GameRoom] ${player.nickname} (${client.sessionId}) joined. Players: ${this.state.players.size}`);
   }
 
-  onLeave(client: Client, code?: number): void {
+  /**
+   * Called when a client disconnects.
+   * During an active match, allows 30 seconds for reconnection.
+   * Player state (position, wet meter, water level) is preserved during the grace window.
+   */
+  async onLeave(client: Client, code?: number): Promise<void> {
     const player = this.state.players.get(client.sessionId);
-    if (player) {
-      console.log(`[GameRoom] ${player.nickname} left (code: ${code})`);
+    if (!player) return;
+
+    // Code 4000+ means intentional leave (consented)
+    const consented = code !== undefined && code >= 4000;
+
+    console.log(
+      `[GameRoom] ${player.nickname} left (code: ${code}, consented: ${consented})`
+    );
+
+    // If the game is actively playing and the disconnect was NOT intentional,
+    // give the player a reconnection window.
+    if (this.state.phase === "playing" && !consented) {
+      try {
+        console.log(
+          `[GameRoom] Holding seat for ${player.nickname} (${RECONNECT_GRACE_PERIOD / 1000}s)`
+        );
+
+        // allowReconnection returns a promise that resolves when the client reconnects
+        // or rejects when the timeout expires.
+        await this.allowReconnection(client, RECONNECT_GRACE_PERIOD / 1000);
+
+        // Client reconnected — restore full state (it was never removed)
+        console.log(`[GameRoom] ${player.nickname} reconnected!`);
+        return;
+      } catch {
+        // Reconnect window expired — fall through to removal
+        console.log(
+          `[GameRoom] ${player.nickname} reconnect window expired, removing`
+        );
+      }
     }
 
-    // Remove player immediately (in Phase 2+ we'd add reconnect grace period)
+    // Remove the player
     this.state.players.delete(client.sessionId);
 
     // Re-evaluate win condition if game is playing

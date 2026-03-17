@@ -4,10 +4,13 @@ import { createServer } from "http";
 import express from "express";
 import cors from "cors";
 import { GameRoom } from "./rooms/GameRoom";
+import { LobbyRoom } from "./rooms/LobbyRoom";
+import { PrivateRoom } from "./rooms/PrivateRoom";
 
 const app = express();
 
-app.use(cors());
+const corsOrigin = process.env.CORS_ORIGIN || "*";
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
 // Health check endpoint
@@ -23,9 +26,12 @@ const gameServer = new Server({
 });
 
 // Register rooms
+gameServer.define("lobby", LobbyRoom);
 gameServer.define("game", GameRoom);
+gameServer.define("private", PrivateRoom);
 
 gameServer.listen(port).then(() => {
   console.log(`🌊 Songkran Royale Server listening on port ${port}`);
   console.log(`   Health check: http://localhost:${port}/health`);
+  console.log(`   Rooms: lobby, game, private`);
 });
