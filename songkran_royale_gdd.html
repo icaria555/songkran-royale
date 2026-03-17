@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Songkran Royale — Game Design Document</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f4f0;
+    color: #1a1a18;
+    padding: 2rem 1rem;
+    min-height: 100vh;
+  }
+  .container { max-width: 760px; margin: 0 auto; }
+
+  :root {
+    --color-background-primary: #ffffff;
+    --color-background-secondary: #f1efe8;
+    --color-background-info: #e6f1fb;
+    --color-background-success: #eaf3de;
+    --color-background-warning: #faeeda;
+    --color-background-danger: #fcebeb;
+    --color-text-primary: #1a1a18;
+    --color-text-secondary: #5f5e5a;
+    --color-text-tertiary: #888780;
+    --color-text-info: #185fa5;
+    --color-text-success: #3b6d11;
+    --color-text-warning: #854f0b;
+    --color-text-danger: #a32d2d;
+    --color-border-tertiary: rgba(0,0,0,0.12);
+    --color-border-secondary: rgba(0,0,0,0.22);
+    --color-border-primary: rgba(0,0,0,0.32);
+    --border-radius-md: 8px;
+    --border-radius-lg: 12px;
+    --gap: 12px;
+    --font-mono: "SF Mono", "Fira Code", monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body { background: #1c1c1a; color: #d4d2c8; }
+    :root {
+      --color-background-primary: #2c2c2a;
+      --color-background-secondary: #242422;
+      --color-background-info: #042c53;
+      --color-background-success: #173404;
+      --color-background-warning: #412402;
+      --color-background-danger: #501313;
+      --color-text-primary: #d4d2c8;
+      --color-text-secondary: #9c9a92;
+      --color-text-tertiary: #6a6860;
+      --color-text-info: #85b7eb;
+      --color-text-success: #97c459;
+      --color-text-warning: #ef9f27;
+      --color-text-danger: #f09595;
+      --color-border-tertiary: rgba(255,255,255,0.10);
+      --color-border-secondary: rgba(255,255,255,0.18);
+      --color-border-primary: rgba(255,255,255,0.28);
+    }
+  }
+
+  .tabs { display:flex; gap:6px; margin-bottom:1.5rem; flex-wrap:wrap; }
+  .tab { padding:6px 14px; border-radius:var(--border-radius-md); border:0.5px solid var(--color-border-secondary); font-size:13px; cursor:pointer; background:transparent; color:var(--color-text-secondary); transition:all .15s; }
+  .tab.active { background:var(--color-background-secondary); color:var(--color-text-primary); border-color:var(--color-border-primary); font-weight:500; }
+  .panel { display:none; } .panel.active { display:block; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:var(--gap); }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:var(--gap); }
+  @media (max-width: 540px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+  .card { background:var(--color-background-primary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-lg); padding:14px 16px; }
+  .card-h { font-size:13px; font-weight:500; margin:0 0 6px; color:var(--color-text-primary); }
+  .card-s { font-size:12px; color:var(--color-text-secondary); line-height:1.6; margin:0; }
+  .badge { display:inline-block; font-size:11px; padding:2px 8px; border-radius:20px; }
+  .badge-blue { background:var(--color-background-info); color:var(--color-text-info); }
+  .badge-green { background:var(--color-background-success); color:var(--color-text-success); }
+  .badge-amber { background:var(--color-background-warning); color:var(--color-text-warning); }
+  .badge-red { background:var(--color-background-danger); color:var(--color-text-danger); }
+  .section-label { font-size:11px; font-weight:500; letter-spacing:.06em; text-transform:uppercase; color:var(--color-text-tertiary); margin:0 0 8px; }
+  .stack-row { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:0.5px solid var(--color-border-tertiary); }
+  .stack-row:last-child { border-bottom:none; }
+  .stack-role { font-size:12px; color:var(--color-text-secondary); min-width:80px; padding-top:1px; flex-shrink:0; }
+  .stack-name { font-size:13px; font-weight:500; color:var(--color-text-primary); margin:0 0 2px; }
+  .stack-why { font-size:12px; color:var(--color-text-secondary); margin:0; }
+  .phase { display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:0.5px solid var(--color-border-tertiary); }
+  .phase:last-child { border-bottom:none; }
+  .phase-num { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:500; flex-shrink:0; }
+  .phase-title { font-size:13px; font-weight:500; margin:0 0 3px; }
+  .phase-desc { font-size:12px; color:var(--color-text-secondary); margin:0; line-height:1.5; }
+  .arch-box { background:var(--color-background-secondary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:10px 14px; }
+  .arch-label { font-size:12px; font-weight:500; margin:0 0 4px; }
+  .arch-sub { font-size:11px; color:var(--color-text-secondary); margin:0; }
+  .arrow-down { text-align:center; color:var(--color-text-tertiary); font-size:16px; padding:2px 0; }
+  .feature-row { display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:0.5px solid var(--color-border-tertiary); }
+  .feature-row:last-child { border-bottom:none; }
+  .feat-title { font-size:13px; font-weight:500; margin:0 0 2px; }
+  .feat-desc { font-size:12px; color:var(--color-text-secondary); margin:0; line-height:1.5; }
+  .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <p style="font-size:18px; font-weight:500; margin:0 0 4px; color:var(--color-text-primary)">Songkran Royale</p>
+  <p style="font-size:13px; color:var(--color-text-secondary); margin:0 0 1.5rem">Real-time PvP water gun battle — browser game concept</p>
+
+  <div class="tabs">
+    <button class="tab active" onclick="show('concept', this)">Game concept</button>
+    <button class="tab" onclick="show('tech', this)">Tech stack</button>
+    <button class="tab" onclick="show('arch', this)">Architecture</button>
+    <button class="tab" onclick="show('roadmap', this)">Roadmap</button>
+  </div>
+
+  <!-- CONCEPT -->
+  <div id="concept" class="panel active">
+    <p class="section-label">Core loop</p>
+    <div class="card" style="margin-bottom:var(--gap)">
+      <p class="card-s" style="font-size:13px; line-height:1.7; margin:0">
+        ผู้เล่น <b>เลือก avatar</b> (หญิง / ชาย / LGBTQ) รับบท "นักท่องเที่ยวต่างชาติ" ที่มาเยือนไทย → เข้า lobby → จับคู่แบบ real-time → ฉีดน้ำสู้กัน → ใครถังน้ำหมดก่อนแพ้ → คนสุดท้ายที่ยืนอยู่ได้ชื่อว่า <b>จ้าวแห่งสงกรานต์</b>
+      </p>
+    </div>
+
+    <div class="grid2" style="margin-bottom:var(--gap)">
+      <div>
+        <p class="section-label">Gameplay pillars</p>
+        <div class="card">
+          <div class="feature-row">
+            <div class="dot" style="background:#3B8BD4"></div>
+            <div><p class="feat-title">Move + Aim + Shoot</p><p class="feat-desc">WASD เดิน / เมาส์เล็ง / คลิกยิงน้ำ (top-down view)</p></div>
+          </div>
+          <div class="feature-row">
+            <div class="dot" style="background:#1D9E75"></div>
+            <div><p class="feat-title">Water tank system</p><p class="feat-desc">น้ำมีจำกัด ต้องวิ่งหาถังเติม ทำให้เกิด zone control</p></div>
+          </div>
+          <div class="feature-row">
+            <div class="dot" style="background:#EF9F27"></div>
+            <div><p class="feat-title">Wet meter</p><p class="feat-desc">โดนน้ำสะสม → เปียก 100% = หมดสิทธิ์ round</p></div>
+          </div>
+          <div class="feature-row">
+            <div class="dot" style="background:#D4537E"></div>
+            <div><p class="feat-title">Map hazard</p><p class="feat-desc">สระน้ำ / ถนน / ขบวนรถที่สาดน้ำ — ธีมถนนเชียงใหม่</p></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="section-label">Character system</p>
+        <div class="card">
+          <div class="feature-row">
+            <div class="dot" style="background:#7F77DD"></div>
+            <div><p class="feat-title">3 identity preset</p><p class="feat-desc">หญิง / ชาย / LGBTQ — เลือกก่อนเข้าเกม</p></div>
+          </div>
+          <div class="feature-row">
+            <div class="dot" style="background:#3B8BD4"></div>
+            <div><p class="feat-title">Nationality skin</p><p class="feat-desc">เลือกธง → เสื้อเปลี่ยนสีธงชาติ (viral hook)</p></div>
+          </div>
+          <div class="feature-row">
+            <div class="dot" style="background:#1D9E75"></div>
+            <div><p class="feat-title">Weapon skin</p><p class="feat-desc">ปืนฉีดน้ำ / ขันน้ำ / สายยาง — unlock ด้วย win streak</p></div>
+          </div>
+          <div class="feature-row">
+            <div class="dot" style="background:#EF9F27"></div>
+            <div><p class="feat-title">Victory pose</p><p class="feat-desc">animation พิเศษเมื่อเป็นจ้าวแห่งสงกรานต์</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="section-label">Viral hooks</p>
+    <div class="grid3">
+      <div class="card"><p class="card-h">Share link</p><p class="card-s">ชวนเพื่อนด้วย URL เดียว เปิด browser เล่นได้เลย ไม่ต้อง install</p></div>
+      <div class="card"><p class="card-h">Result card</p><p class="card-s">จบเกมได้ภาพ "จ้าวแห่งสงกรานต์" พร้อมสถิติ — แชร์ได้ทันที</p></div>
+      <div class="card"><p class="card-h">Room code</p><p class="card-s">สร้าง room ส่วนตัว 6 ตัวอักษร เล่นกับเพื่อนได้เลย</p></div>
+    </div>
+  </div>
+
+  <!-- TECH -->
+  <div id="tech" class="panel">
+    <p class="section-label">Stack แนะนำ สำหรับ real-time PvP บน browser</p>
+    <div class="card" style="margin-bottom:var(--gap)">
+      <div class="stack-row">
+        <span class="stack-role">Renderer</span>
+        <div><p class="stack-name">Phaser 3 <span class="badge badge-green" style="margin-left:6px">แนะนำ</span></p><p class="stack-why">WebGL + Canvas fallback, physics ในตัว, particle system, tilemap — community ใหญ่ที่สุด เหมาะ top-down 2D สุดๆ</p></div>
+      </div>
+      <div class="stack-row">
+        <span class="stack-role">Multiplayer</span>
+        <div><p class="stack-name">Colyseus <span class="badge badge-green" style="margin-left:6px">แนะนำ</span></p><p class="stack-why">Game server framework สำหรับ Node.js โดยเฉพาะ — จัดการ room, state sync, matchmaking ได้ครบ ไม่ต้องเขียน socket logic เอง</p></div>
+      </div>
+      <div class="stack-row">
+        <span class="stack-role">Transport</span>
+        <div><p class="stack-name">WebSocket (built-in Colyseus)</p><p class="stack-why">Latency ต่ำ, browser รองรับ 100% — เหมาะกว่า HTTP polling สำหรับ real-time PvP</p></div>
+      </div>
+      <div class="stack-row">
+        <span class="stack-role">Backend</span>
+        <div><p class="stack-name">Node.js + TypeScript</p><p class="stack-why">Share type definition ระหว่าง client กับ server ได้เลย — ลด bug ระหว่าง sync state</p></div>
+      </div>
+      <div class="stack-row">
+        <span class="stack-role">Deploy</span>
+        <div><p class="stack-name">Vercel (client) + Railway / Fly.io (server)</p><p class="stack-why">Client เป็น static HTML/JS deploy Vercel ฟรี, Server ต้องการ persistent WebSocket — Railway หรือ Fly.io รองรับได้ดี</p></div>
+      </div>
+      <div class="stack-row">
+        <span class="stack-role">Assets</span>
+        <div><p class="stack-name">Aseprite (pixel art) + Tiled (map)</p><p class="stack-why">Tiled export เป็น JSON Phaser อ่านได้โดยตรง — workflow เร็วมาก</p></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card"><p class="card-h" style="color:var(--color-text-success)">ทำไม Colyseus ไม่ใช่ Socket.io</p><p class="card-s">Socket.io เป็น general purpose — ต้องเขียน room management, state delta, reconnection logic เอง. Colyseus สร้างมาเพื่อเกมโดยเฉพาะ มี schema-based state sync ที่ส่งแค่ delta ทำให้ bandwidth ต่ำ</p></div>
+      <div class="card"><p class="card-h" style="color:var(--color-text-warning)">ข้อควรระวัง latency</p><p class="card-s">Real-time PvP ต้องการ authoritative server — ทุก action validate บน server ก่อน. ถ้า server อยู่ต่างประเทศ latency สูง ควรเลือก region ที่ใกล้กับ user หลัก (SEA)</p></div>
+    </div>
+  </div>
+
+  <!-- ARCH -->
+  <div id="arch" class="panel">
+    <p class="section-label">System architecture — real-time PvP</p>
+    <div style="display:grid; grid-template-columns:1fr 40px 1fr; gap:8px; align-items:start; margin-bottom:var(--gap)">
+      <div>
+        <p class="section-label" style="margin-bottom:8px">Client (Phaser 3)</p>
+        <div class="arch-box" style="margin-bottom:6px"><p class="arch-label">Input Manager</p><p class="arch-sub">WASD + mouse → แปลงเป็น intent</p></div>
+        <div class="arrow-down">↓</div>
+        <div class="arch-box" style="margin-bottom:6px"><p class="arch-label">Colyseus Client SDK</p><p class="arch-sub">ส่ง intent → รับ state delta</p></div>
+        <div class="arrow-down">↓</div>
+        <div class="arch-box" style="margin-bottom:6px"><p class="arch-label">Reconciliation Layer</p><p class="arch-sub">interpolate positions + predict</p></div>
+        <div class="arrow-down">↓</div>
+        <div class="arch-box"><p class="arch-label">Phaser Scene</p><p class="arch-sub">render sprites, particles, UI</p></div>
+      </div>
+      <div style="display:flex; align-items:center; justify-content:center; padding-top:80px">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px">
+          <div style="font-size:10px; color:var(--color-text-tertiary)">WebSocket</div>
+          <div style="font-size:18px; color:var(--color-text-tertiary)">⟷</div>
+        </div>
+      </div>
+      <div>
+        <p class="section-label" style="margin-bottom:8px">Server (Colyseus)</p>
+        <div class="arch-box" style="margin-bottom:6px"><p class="arch-label">Matchmaking Room</p><p class="arch-sub">รอผู้เล่น / สร้าง game room</p></div>
+        <div class="arrow-down">↓</div>
+        <div class="arch-box" style="margin-bottom:6px"><p class="arch-label">Game Room (Schema)</p><p class="arch-sub">จัดการ state ของห้องเกม</p></div>
+        <div class="arrow-down">↓</div>
+        <div class="arch-box" style="margin-bottom:6px"><p class="arch-label">Physics / Collision</p><p class="arch-sub">server-side validation</p></div>
+        <div class="arrow-down">↓</div>
+        <div class="arch-box"><p class="arch-label">State Broadcast</p><p class="arch-sub">ส่ง delta ทุก tick (20Hz)</p></div>
+      </div>
+    </div>
+
+    <p class="section-label">State schema (Colyseus)</p>
+    <div class="card" style="font-family:var(--font-mono); font-size:12px; line-height:1.8; color:var(--color-text-secondary)">
+      <span style="color:var(--color-text-info)">GameState</span> {<br>
+      &nbsp;&nbsp;<span style="color:var(--color-text-primary)">players</span>: MapSchema&lt;PlayerState&gt;<br>
+      &nbsp;&nbsp;<span style="color:var(--color-text-primary)">waterTanks</span>: ArraySchema&lt;TankState&gt;<br>
+      &nbsp;&nbsp;<span style="color:var(--color-text-primary)">phase</span>: <span style="color:var(--color-text-warning)">"lobby" | "playing" | "ended"</span><br>
+      &nbsp;&nbsp;<span style="color:var(--color-text-primary)">timeLeft</span>: number<br>
+      }<br><br>
+      <span style="color:var(--color-text-info)">PlayerState</span> {<br>
+      &nbsp;&nbsp;x, y, angle, waterLevel, wetMeter<br>
+      &nbsp;&nbsp;character: <span style="color:var(--color-text-warning)">"female" | "male" | "lgbtq"</span><br>
+      &nbsp;&nbsp;nationality, isAlive, score<br>
+      }
+    </div>
+  </div>
+
+  <!-- ROADMAP -->
+  <div id="roadmap" class="panel">
+    <p class="section-label">Development phases</p>
+    <div class="card">
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-background-info); color:var(--color-text-info)">1</div>
+        <div><p class="phase-title">Prototype — single player <span class="badge badge-blue" style="margin-left:6px">~1–2 wks</span></p><p class="phase-desc">Phaser 3 setup → top-down character เดินได้ → ยิงน้ำ → wet meter → map เบื้องต้น — ทดสอบ feel ของเกมก่อน</p></div>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-background-success); color:var(--color-text-success)">2</div>
+        <div><p class="phase-title">Local multiplayer — 2P same machine <span class="badge badge-green" style="margin-left:6px">~1 wk</span></p><p class="phase-desc">WASD + Arrow keys → 2 ผู้เล่นบนหน้าจอเดียว → ทดสอบ game balance และ collision</p></div>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-background-warning); color:var(--color-text-warning)">3</div>
+        <div><p class="phase-title">Online multiplayer — Colyseus <span class="badge badge-amber" style="margin-left:6px">~2–3 wks</span></p><p class="phase-desc">ติดตั้ง Colyseus server → ย้าย game logic ขึ้น server → WebSocket sync → room + matchmaking → deploy Railway</p></div>
+      </div>
+      <div class="phase">
+        <div class="phase-num" style="background:var(--color-background-danger); color:var(--color-text-danger)">4</div>
+        <div><p class="phase-title">Polish + viral features <span class="badge badge-red" style="margin-left:6px">~1–2 wks</span></p><p class="phase-desc">Character selection UI → share link → result card รูปภาพ → sound effect + BGM สงกรานต์ → mobile touch controls</p></div>
+      </div>
+    </div>
+
+    <div class="grid2" style="margin-top:var(--gap)">
+      <div class="card"><p class="card-h">ยาก / เสี่ยงที่สุด</p><p class="card-s" style="line-height:1.7">Phase 3 คือจุดที่ยากที่สุด โดยเฉพาะ <b>lag compensation</b> และ <b>cheat prevention</b> — แนะนำให้ทำ authoritative server ตั้งแต่ต้น อย่า client-side physics ก่อนแล้วค่อยย้าย จะงานเพิ่มมาก</p></div>
+      <div class="card"><p class="card-h">สงกรานต์ปี 2569</p><p class="card-s" style="line-height:1.7">เหลือเวลาน้อยกว่า 1 เดือน — ถ้าอยากปล่อยทัน ทำถึง Phase 3 ก็พอ (ยังไม่ต้อง polish ครบ) หรือปล่อย Phase 1–2 เป็น demo ให้เพื่อนเล่นก่อน</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function show(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+</script>
+</body>
+</html>
