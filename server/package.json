@@ -16,16 +16,16 @@
   "dependencies": {
     "@colyseus/ws-transport": "^0.17.9",
     "@supabase/supabase-js": "^2.99.2",
-    "colyseus": "^0.17.8",
-    "cors": "^2.8.6",
-    "express": "^5.2.1"
-  },
-  "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",
+    "colyseus": "^0.17.8",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
     "ts-node-dev": "^2.0.0",
-    "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   }
 }
