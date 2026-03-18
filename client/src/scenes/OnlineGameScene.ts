@@ -15,6 +15,7 @@ import {
 } from "../effects/ParticleEffects";
 import { MapRenderer } from "../map/MapRenderer";
 import { WaterTruck } from "../game/WaterTruck";
+import { TouchControls, isMobile } from "../ui/TouchControls";
 
 interface OnlineGameData {
   character: string;
@@ -65,6 +66,7 @@ export class OnlineGameScene extends Phaser.Scene {
   private waterLowPlayed = false;
   private muteButton!: Phaser.GameObjects.Text;
   private refillBubbleTimer = 0;
+  private touchControls: TouchControls | null = null;
 
   // Slippery zone popup
   private wasInSlippery = false;
@@ -106,22 +108,26 @@ export class OnlineGameScene extends Phaser.Scene {
       d: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
 
-    // Mouse shoot
+    // Mouse shoot (desktop only — mobile uses TouchControls)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      if (this.touchControls) return; // handled by touch controls
       if (!this.gameOver && !this.isReconnecting) {
         // Ignore clicks on mute button area
         if (pointer.x > this.scale.width - 50 && pointer.y < 40) return;
-        this.room.send("shoot", {});
-        soundManager.play("shoot");
-        matchStats.recordShot();
-        if (this.localSprite) {
-          shootMuzzle(this, this.localSprite.x, this.localSprite.y, this.aimAngle);
-        }
+        this.onlineShoot();
       }
     });
 
     // HUD
     this.hud = new HUD(this);
+
+    // Mobile touch controls
+    if (isMobile()) {
+      this.touchControls = new TouchControls(this);
+      this.touchControls.onShoot = () => {
+        if (!this.gameOver && !this.isReconnecting) this.onlineShoot();
+      };
+    }
 
     // Mute button (top-right)
     this.muteButton = this.add
@@ -149,8 +155,11 @@ export class OnlineGameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
 
     // Controls hint
+    const hintText = isMobile()
+      ? "Joystick move · Tap shoot"
+      : "WASD move · Mouse aim · Click shoot";
     this.add
-      .text(this.scale.width / 2, this.scale.height - 20, "WASD move · Mouse aim · Click shoot", {
+      .text(this.scale.width / 2, this.scale.height - 20, hintText, {
         fontSize: "10px",
         color: "#7db8e8",
         fontFamily: "Sarabun, sans-serif",
@@ -161,6 +170,16 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Wire up Colyseus state listeners
     this.wireRoomListeners(this.room);
+  }
+
+  /** Centralised shoot action used by both desktop click and mobile touch. */
+  private onlineShoot(): void {
+    this.room.send("shoot", {});
+    soundManager.play("shoot");
+    matchStats.recordShot();
+    if (this.localSprite) {
+      shootMuzzle(this, this.localSprite.x, this.localSprite.y, this.aimAngle);
+    }
   }
 
   // ── Room listener wiring (reusable for reconnect) ────────────
@@ -515,18 +534,25 @@ export class OnlineGameScene extends Phaser.Scene {
       );
       this.localLabel.setPosition(this.localSprite.x, this.localSprite.y - 40);
 
-      // Also apply client-side prediction for responsiveness
+      // Client-side prediction for responsiveness
       let vx = 0;
       let vy = 0;
-      if (this.cursors.a.isDown) vx = -1;
-      if (this.cursors.d.isDown) vx = 1;
-      if (this.cursors.w.isDown) vy = -1;
-      if (this.cursors.s.isDown) vy = 1;
 
-      if (vx !== 0 && vy !== 0) {
-        const norm = 1 / Math.SQRT2;
-        vx *= norm;
-        vy *= norm;
+      if (this.touchControls) {
+        const dir = this.touchControls.direction;
+        vx = dir.x;
+        vy = dir.y;
+      } else {
+        if (this.cursors.a.isDown) vx = -1;
+        if (this.cursors.d.isDown) vx = 1;
+        if (this.cursors.w.isDown) vy = -1;
+        if (this.cursors.s.isDown) vy = 1;
+
+        if (vx !== 0 && vy !== 0) {
+          const norm = 1 / Math.SQRT2;
+          vx *= norm;
+          vy *= norm;
+        }
       }
 
       const dt = delta / 1000;
@@ -534,27 +560,49 @@ export class OnlineGameScene extends Phaser.Scene {
       this.localSprite.y += vy * PLAYER_SPEED * dt * 0.5;
     }
 
-    // Aim toward mouse
-    const pointer = this.input.activePointer;
-    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    this.aimAngle = Phaser.Math.Angle.Between(
-      this.localSprite.x,
-      this.localSprite.y,
-      worldPoint.x,
-      worldPoint.y
-    );
+    // Aim: on mobile aim = movement direction, on desktop aim toward mouse
+    if (this.touchControls) {
+      const dir = this.touchControls.direction;
+      if (Math.abs(dir.x) > 0.1 || Math.abs(dir.y) > 0.1) {
+        this.aimAngle = Math.atan2(dir.y, dir.x);
+      }
+    } else {
+      const pointer = this.input.activePointer;
+      const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      this.aimAngle = Phaser.Math.Angle.Between(
+        this.localSprite.x,
+        this.localSprite.y,
+        worldPoint.x,
+        worldPoint.y
+      );
+    }
 
     // Send input to server at throttled rate
     this.inputSendTimer += delta;
     if (this.inputSendTimer >= this.INPUT_SEND_RATE) {
       this.inputSendTimer = 0;
-      this.room.send("input", {
-        keys: {
+
+      // Map joystick direction to WASD booleans for the server
+      let keys: { w: boolean; a: boolean; s: boolean; d: boolean };
+      if (this.touchControls) {
+        const dir = this.touchControls.direction;
+        keys = {
+          w: dir.y < -0.3,
+          a: dir.x < -0.3,
+          s: dir.y > 0.3,
+          d: dir.x > 0.3,
+        };
+      } else {
+        keys = {
           w: this.cursors.w.isDown,
           a: this.cursors.a.isDown,
           s: this.cursors.s.isDown,
           d: this.cursors.d.isDown,
-        },
+        };
+      }
+
+      this.room.send("input", {
+        keys,
         angle: this.aimAngle,
       });
     }
@@ -581,6 +629,11 @@ export class OnlineGameScene extends Phaser.Scene {
         station.setHighlight(
           station.isPlayerInRange(this.localSprite.x, this.localSprite.y)
         );
+      }
+
+      // Touch controls: show/hide refill button
+      if (this.touchControls) {
+        this.touchControls.setRefillVisible(isRefilling);
       }
 
       // Refill sound management

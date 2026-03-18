@@ -24,6 +24,7 @@ export class Player {
     d: Phaser.Input.Keyboard.Key;
   };
   private aimAngle = 0;
+  private touchActive = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -69,6 +70,33 @@ export class Player {
       .setName("playerLabel");
   }
 
+  /**
+   * Apply movement from a virtual joystick. When called the player enters
+   * "touch mode" and keyboard/mouse aim is bypassed for that frame.
+   */
+  applyTouchInput(joystick: { x: number; y: number }): void {
+    this.touchActive = true;
+
+    if (!this.isAlive) return;
+
+    let vx = joystick.x;
+    let vy = joystick.y;
+
+    // Normalize if magnitude > 1
+    const mag = Math.sqrt(vx * vx + vy * vy);
+    if (mag > 1) {
+      vx /= mag;
+      vy /= mag;
+    }
+
+    this.sprite.setVelocity(vx * PLAYER_SPEED, vy * PLAYER_SPEED);
+
+    // Aim in movement direction (auto-aim)
+    if (mag > 0.1) {
+      this.aimAngle = Math.atan2(vy, vx);
+    }
+  }
+
   update(): void {
     if (!this.isAlive) {
       this.sprite.setVelocity(0, 0);
@@ -76,35 +104,40 @@ export class Player {
       return;
     }
 
-    // Movement
-    let vx = 0;
-    let vy = 0;
-    if (this.cursors.a.isDown) vx = -1;
-    if (this.cursors.d.isDown) vx = 1;
-    if (this.cursors.w.isDown) vy = -1;
-    if (this.cursors.s.isDown) vy = 1;
+    // If touch input was applied this frame, skip keyboard/mouse handling
+    if (this.touchActive) {
+      this.touchActive = false;
+    } else {
+      // Movement
+      let vx = 0;
+      let vy = 0;
+      if (this.cursors.a.isDown) vx = -1;
+      if (this.cursors.d.isDown) vx = 1;
+      if (this.cursors.w.isDown) vy = -1;
+      if (this.cursors.s.isDown) vy = 1;
 
-    // Normalize diagonal
-    if (vx !== 0 && vy !== 0) {
-      const norm = 1 / Math.SQRT2;
-      vx *= norm;
-      vy *= norm;
+      // Normalize diagonal
+      if (vx !== 0 && vy !== 0) {
+        const norm = 1 / Math.SQRT2;
+        vx *= norm;
+        vy *= norm;
+      }
+
+      this.sprite.setVelocity(vx * PLAYER_SPEED, vy * PLAYER_SPEED);
+
+      // Aim toward mouse
+      const pointer = this.scene.input.activePointer;
+      const worldPoint = this.scene.cameras.main.getWorldPoint(
+        pointer.x,
+        pointer.y
+      );
+      this.aimAngle = Phaser.Math.Angle.Between(
+        this.sprite.x,
+        this.sprite.y,
+        worldPoint.x,
+        worldPoint.y
+      );
     }
-
-    this.sprite.setVelocity(vx * PLAYER_SPEED, vy * PLAYER_SPEED);
-
-    // Aim toward mouse
-    const pointer = this.scene.input.activePointer;
-    const worldPoint = this.scene.cameras.main.getWorldPoint(
-      pointer.x,
-      pointer.y
-    );
-    this.aimAngle = Phaser.Math.Angle.Between(
-      this.sprite.x,
-      this.sprite.y,
-      worldPoint.x,
-      worldPoint.y
-    );
 
     // Update label position
     const label = this.scene.children.getByName(

@@ -23,6 +23,11 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
+  input: {
+    touch: {
+      capture: true,
+    },
+  },
   dom: {
     createContainer: true,
   },

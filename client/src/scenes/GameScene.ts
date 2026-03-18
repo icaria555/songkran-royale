@@ -14,6 +14,7 @@ import {
 } from "../effects/ParticleEffects";
 import { MapRenderer } from "../map/MapRenderer";
 import { WaterTruck } from "../game/WaterTruck";
+import { TouchControls, isMobile } from "../ui/TouchControls";
 
 interface GameData {
   character: string;
@@ -36,6 +37,7 @@ export class GameScene extends Phaser.Scene {
   private refillBubbleTimer = 0;
   private mapRenderer!: MapRenderer;
   private waterTruck!: WaterTruck;
+  private touchControls: TouchControls | null = null;
 
   // Slippery zone popup state
   private wasInSlippery = false;
@@ -157,9 +159,10 @@ export class GameScene extends Phaser.Scene {
       b.disableBody(true, true);
     });
 
-    // Mouse shoot
+    // Mouse shoot (desktop only — mobile uses TouchControls)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (this.gameOver) return;
+      if (this.touchControls) return; // handled by touch controls
       // Ignore clicks on the mute button area (top-right)
       if (pointer.x > this.scale.width - 50 && pointer.y < 40) return;
       this.playerShoot();
@@ -167,6 +170,14 @@ export class GameScene extends Phaser.Scene {
 
     // HUD
     this.hud = new HUD(this);
+
+    // Mobile touch controls
+    if (isMobile()) {
+      this.touchControls = new TouchControls(this);
+      this.touchControls.onShoot = () => {
+        if (!this.gameOver) this.playerShoot();
+      };
+    }
 
     // Mute button (top-right)
     this.muteButton = this.add
@@ -217,8 +228,11 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Controls hint
+    const hintText = isMobile()
+      ? "Joystick move · Tap shoot"
+      : "WASD move · Mouse aim · Click shoot";
     this.add
-      .text(this.scale.width / 2, this.scale.height - 20, "WASD move · Mouse aim · Click shoot", {
+      .text(this.scale.width / 2, this.scale.height - 20, hintText, {
         fontSize: "10px",
         color: "#7db8e8",
         fontFamily: "Sarabun, sans-serif",
@@ -233,6 +247,14 @@ export class GameScene extends Phaser.Scene {
 
     if (this.player.isAlive) {
       matchStats.updateTimeSurvived(delta / 1000);
+    }
+
+    // Touch controls: apply joystick input before player.update()
+    if (this.touchControls) {
+      const dir = this.touchControls.direction;
+      if (dir.x !== 0 || dir.y !== 0) {
+        this.player.applyTouchInput(dir);
+      }
     }
 
     this.player.update();
@@ -291,6 +313,11 @@ export class GameScene extends Phaser.Scene {
       } else {
         station.setHighlight(false);
       }
+    }
+
+    // Touch controls: show/hide refill button
+    if (this.touchControls) {
+      this.touchControls.setRefillVisible(playerRefilling);
     }
 
     // Refill sound management
