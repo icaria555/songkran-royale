@@ -4,5 +4,6 @@ dist/
 *.local
 .env
 .env.local
-.claude/
+client/playwright-report/
+client/test-results/
 .vercel/
