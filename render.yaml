@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: songkran-server
+    runtime: node
+    region: oregon
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: https://client-xi-mauve.vercel.app
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: COLYSEUS_SECRET
+        generateValue: true
