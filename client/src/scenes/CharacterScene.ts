@@ -153,11 +153,11 @@ export class CharacterScene extends Phaser.Scene {
 
     CHARACTERS.forEach((char, i) => {
       const cardX = startX + i * (cardWidth + cardGap);
-      const cardY = 210;
+      const cardY = 200;
 
-      // Selection box
+      // Selection box — tall enough to contain sprite + name + stats
       const box = this.add
-        .rectangle(cardX, cardY, cardWidth, 170, 0xffffff, 0.06)
+        .rectangle(cardX, cardY, cardWidth, 190, 0xffffff, 0.06)
         .setStrokeStyle(1.5, i === this.selectedChar ? 0xf5c842 : 0xffffff, i === this.selectedChar ? 1 : 0.12)
         .setInteractive({ useHandCursor: true });
 
@@ -165,13 +165,13 @@ export class CharacterScene extends Phaser.Scene {
 
       // Character sprite
       const sprite = this.add
-        .sprite(cardX, cardY - 30, `char_${char.key}`)
+        .sprite(cardX, cardY - 40, `char_${char.key}`)
         .setScale(4);
       this.charSprites.push(sprite);
 
       // Name
       this.add
-        .text(cardX, cardY + 35, char.label, {
+        .text(cardX, cardY + 25, char.label, {
           fontSize: "14px",
           color: "#e8f4ff",
           fontFamily: "Kanit, sans-serif",
@@ -180,15 +180,15 @@ export class CharacterScene extends Phaser.Scene {
         .setOrigin(0.5);
 
       this.add
-        .text(cardX, cardY + 52, char.subLabel, {
-          fontSize: "10px",
+        .text(cardX, cardY + 40, char.subLabel, {
+          fontSize: "9px",
           color: "#7db8e8",
           fontFamily: "Sarabun, sans-serif",
         })
         .setOrigin(0.5);
 
-      // Stat bars
-      const statsY = cardY + 66;
+      // Stat bars — positioned inside the card
+      const statsY = cardY + 55;
       const labels = ["Speed", "Power", "Range"];
       const values = [char.stats.speed, char.stats.power, char.stats.range];
       labels.forEach((label, si) => {
