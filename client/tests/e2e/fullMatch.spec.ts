@@ -220,8 +220,8 @@ test.describe("Full Match — Online Mode", () => {
     await clickCanvas(page1, 400, 460);
     await clickCanvas(page2, 400, 460);
 
-    // Wait for countdown + match start
-    await page1.waitForTimeout(15_000);
+    // Wait for lobby countdown (10s) + transfer + game countdown (3s) + buffer
+    await page1.waitForTimeout(25_000);
 
     const scene1 = await getPhaserSceneKey(page1);
     const scene2 = await getPhaserSceneKey(page2);

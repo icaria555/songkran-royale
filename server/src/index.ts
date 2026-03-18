@@ -43,7 +43,7 @@ const gameServer = new Server({
 });
 
 // Register rooms
-gameServer.define("lobby", LobbyRoom);
+gameServer.define("lobby", LobbyRoom).filterBy(["mapId"]);
 gameServer.define("game", GameRoom);
 gameServer.define("private", PrivateRoom);
 

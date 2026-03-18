@@ -342,22 +342,19 @@ export class LobbyScene extends Phaser.Scene {
       });
 
       // Listen for room transfer (lobby matched us into a game room)
-      lobby.onMessage("transferToGame", async (data: { roomId: string; sessionToken: string }) => {
+      lobby.onMessage("transfer", async (data: { roomId: string; sessionId: string; reservationToken: any }) => {
         this.statusText.setText("พบห้องแล้ว! กำลังเข้าร่วม...\nMatch found! Joining...");
         this.statusText.setColor("#f5c842");
 
         try {
-          const gameRoom = await joinRoomById(data.roomId, {
-            sessionToken: data.sessionToken,
-            nickname: this.lobbyData.nickname,
-            character: this.lobbyData.character,
-            nationality: this.lobbyData.nationality,
-            mapId: this.getSelectedMapId(),
-          });
+          const { getClient } = await import("../network/ColyseusClient");
+          const gameRoom = await getClient().consumeSeatReservation(data.reservationToken);
           leaveLobby();
           this.gameRoom = gameRoom;
           setCurrentRoom(gameRoom);
           this.wireGameRoom(gameRoom);
+          // Auto-ready since we came from a lobby that already confirmed readiness
+          gameRoom.send("ready");
         } catch (err) {
           console.error("Failed to join game room:", err);
           this.statusText.setText("เข้าห้องไม่ได้ / Failed to join game");
@@ -759,33 +756,31 @@ export class LobbyScene extends Phaser.Scene {
   }
 
   private wireGameRoom(room: Room): void {
-    // Listen for state changes — phase
+    // Listen for state changes via onStateChange (v0.17 compatible)
+    room.onStateChange((state: any) => {
+      const phase = state.phase;
+      const count = state.countdownTimer;
+
+      if (phase === "countdown") {
+        this.statusText.setText(count >= 0 ? `${count}...` : "เตรียมตัว... Countdown!");
+        this.statusText.setColor("#f5c842");
+      }
+
+      if (phase === "playing" && this.scene.isActive("LobbyScene")) {
+        this.scene.start("OnlineGameScene", {
+          ...this.lobbyData,
+          room,
+          mapId: state.mapId || this.getSelectedMapId(),
+        });
+      }
+    });
+
     if (room.state) {
-      room.state.listen("phase", (phase: string) => {
-        if (phase === "countdown") {
-          this.statusText.setText("เตรียมตัว... Countdown!");
-          this.statusText.setColor("#f5c842");
-        }
-        if (phase === "playing") {
-          this.scene.start("OnlineGameScene", {
-            ...this.lobbyData,
-            room,
-            mapId: room.state?.mapId || this.getSelectedMapId(),
-          });
-        }
-      });
-
-      room.state.listen("countdownTimer", (count: number) => {
-        if (room.state.phase === "countdown") {
-          this.statusText.setText(`${count}...`);
-          this.statusText.setColor("#f5c842");
-        }
-      });
-
       // Player list
-      if (room.state.players) {
-        room.state.players.onAdd(() => this.updatePlayerListFromRoom(room));
-        room.state.players.onRemove(() => this.updatePlayerListFromRoom(room));
+      const state = room.state as any;
+      if (state.players) {
+        state.players.onAdd(() => this.updatePlayerListFromRoom(room));
+        state.players.onRemove(() => this.updatePlayerListFromRoom(room));
         this.updatePlayerListFromRoom(room);
       }
     }
