@@ -170,21 +170,20 @@ test.describe("Full Match — Offline Mode", () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════
-// ONLINE MODE — Multiplayer (auto-skips when server is not reachable)
+// ONLINE MODE — Multiplayer (requires Colyseus server on :2567)
 // ══════════════════════════════════════════════════════════════════════
 
 test.describe("Full Match — Online Mode", () => {
-  let serverUp = false;
-
   test.beforeAll(async () => {
-    serverUp = await isServerRunning();
+    const serverUp = await isServerRunning();
     if (!serverUp) {
-      console.log("⚠️ Colyseus server not running on :2567 — online tests will be skipped");
+      throw new Error(
+        "Colyseus game server is not running on port 2567.\n" +
+        "Start it before running online tests:\n\n" +
+        "  cd server && npm run dev\n\n" +
+        "Then re-run:  cd client && npx playwright test tests/e2e/fullMatch.spec.ts"
+      );
     }
-  });
-
-  test.beforeEach(async () => {
-    test.skip(!serverUp, "Colyseus server not reachable on port 2567");
   });
 
   test("2 players join lobby, ready up, match starts", async ({ browser }) => {
