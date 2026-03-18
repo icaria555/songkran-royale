@@ -15,6 +15,8 @@ import {
 } from "../effects/ParticleEffects";
 import { MapRenderer, type MapId } from "../map/MapRenderer";
 import { WaterTruck } from "../game/WaterTruck";
+import { FloodHazard } from "../game/FloodHazard";
+import { PartyZone } from "../game/PartyZone";
 import { TouchControls, isMobile } from "../ui/TouchControls";
 import { getSelectedSkin } from "../skins/WeaponSkins";
 
@@ -74,6 +76,10 @@ export class OnlineGameScene extends Phaser.Scene {
   private wasInSlippery = false;
   private slipperyPopup: Phaser.GameObjects.Text | null = null;
 
+  // Khao San hazards
+  private floodHazard: FloodHazard | null = null;
+  private partyZone: PartyZone | null = null;
+
   constructor() {
     super({ key: "OnlineGameScene" });
   }
@@ -103,6 +109,15 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Water truck (online mode — listens for server events; disabled on khaosan)
     this.waterTruck = new WaterTruck(this, true, mapId !== "chiangmai");
+
+    // Khao San Road hazards
+    if (mapId === "khaosan") {
+      this.floodHazard = new FloodHazard(this);
+      const partyZones = this.mapRenderer.getPartyZones();
+      if (partyZones.length > 0) {
+        this.partyZone = new PartyZone(this, partyZones);
+      }
+    }
 
     // Keyboard
     const kb = this.input.keyboard!;
@@ -344,6 +359,36 @@ export class OnlineGameScene extends Phaser.Scene {
       this.waterTruck.syncPosition(data.x);
     });
 
+    // Flood hazard events (Khao San)
+    room.onMessage("floodWarning", (data: { zones?: Array<{ x: number; y: number; w: number; h: number }> }) => {
+      if (this.floodHazard) {
+        const zones = data.zones || this.mapRenderer.getFloodZones();
+        this.floodHazard.showWarning(zones);
+      }
+    });
+
+    room.onMessage("floodActive", (data: { zones?: Array<{ x: number; y: number; w: number; h: number }> }) => {
+      if (this.floodHazard) {
+        const zones = data.zones || this.mapRenderer.getFloodZones();
+        this.floodHazard.activate(zones);
+      }
+    });
+
+    room.onMessage("floodEnd", () => {
+      if (this.floodHazard) {
+        this.floodHazard.deactivate();
+      }
+    });
+
+    // Party zone positions (Khao San)
+    room.onMessage("partyZones", (data: { zones: Array<{ x: number; y: number; w: number; h: number }> }) => {
+      if (this.partyZone) {
+        this.partyZone.updateZones(data.zones);
+      } else {
+        this.partyZone = new PartyZone(this, data.zones);
+      }
+    });
+
     // Game phase changes
     room.state.listen("phase", (phase: string) => {
       if (phase === "countdown") {
@@ -358,6 +403,8 @@ export class OnlineGameScene extends Phaser.Scene {
         soundManager.stopMusic(200);
         soundManager.stopAmbientWater();
         this.waterTruck.destroy();
+        if (this.floodHazard) this.floodHazard.destroy();
+        if (this.partyZone) this.partyZone.destroy();
         const winnerId = room.state.winnerId;
         const winner = room.state.players.get(winnerId);
         const winnerName = winner?.nickname || "Unknown";
@@ -617,6 +664,20 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Update remote players (interpolation)
     this.remotePlayers.forEach((remote) => remote.update());
+
+    // Flood hazard update (Khao San)
+    if (this.floodHazard && this.localSprite) {
+      this.floodHazard.showWaterRefillIndicator(
+        this.localSprite.x,
+        this.localSprite.y,
+        delta
+      );
+    }
+
+    // Party zone update (Khao San)
+    if (this.partyZone && this.localSprite) {
+      this.partyZone.update(this.localSprite.x, this.localSprite.y, delta);
+    }
 
     // Slippery zone popup
     const inSlippery = this.mapRenderer.isInSlipperyZone(

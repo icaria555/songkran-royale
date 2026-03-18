@@ -14,6 +14,8 @@ import {
 } from "../effects/ParticleEffects";
 import { MapRenderer, type MapId } from "../map/MapRenderer";
 import { WaterTruck } from "../game/WaterTruck";
+import { FloodHazard } from "../game/FloodHazard";
+import { PartyZone } from "../game/PartyZone";
 import { TouchControls, isMobile } from "../ui/TouchControls";
 import { getSelectedSkin } from "../skins/WeaponSkins";
 
@@ -45,6 +47,11 @@ export class GameScene extends Phaser.Scene {
   private wasInSlippery = false;
   private slipperyPopup: Phaser.GameObjects.Text | null = null;
 
+  // Khao San hazards
+  private floodHazard: FloodHazard | null = null;
+  private partyZone: PartyZone | null = null;
+  private floodElapsed = 0;
+
   constructor() {
     super({ key: "GameScene" });
   }
@@ -72,6 +79,16 @@ export class GameScene extends Phaser.Scene {
 
     // Water truck hazard — only on Chiang Mai (offline mode — local 30s timer)
     this.waterTruck = new WaterTruck(this, false, mapId !== "chiangmai");
+
+    // Khao San Road hazards (offline — local flood timer)
+    if (mapId === "khaosan") {
+      this.floodHazard = new FloodHazard(this);
+      const partyZones = this.mapRenderer.getPartyZones();
+      if (partyZones.length > 0) {
+        this.partyZone = new PartyZone(this, partyZones);
+      }
+      this.floodElapsed = 0;
+    }
 
     // Player — spawn at S1 position
     this.player = new Player(
@@ -288,6 +305,47 @@ export class GameScene extends Phaser.Scene {
       splashOnHit(this, this.player.sprite.x, this.player.sprite.y);
     }
 
+    // Khao San flood timer (offline mode)
+    // Config: 25s interval, 2s warning, 6s active
+    if (this.floodHazard) {
+      const FLOOD_INTERVAL = 25000;
+      const FLOOD_WARNING = 2000;
+      const FLOOD_DURATION = 6000;
+      const CYCLE = FLOOD_INTERVAL + FLOOD_WARNING + FLOOD_DURATION;
+
+      this.floodElapsed += delta;
+      const phase = this.floodElapsed % CYCLE;
+
+      if (phase < FLOOD_INTERVAL) {
+        // Idle — no flood
+        if (this.floodHazard.getState() !== "inactive") {
+          this.floodHazard.deactivate();
+        }
+      } else if (phase < FLOOD_INTERVAL + FLOOD_WARNING) {
+        // Warning phase
+        if (this.floodHazard.getState() !== "warning") {
+          this.floodHazard.showWarning(this.mapRenderer.getFloodZones());
+        }
+      } else {
+        // Active phase
+        if (this.floodHazard.getState() !== "active") {
+          this.floodHazard.activate(this.mapRenderer.getFloodZones());
+        }
+      }
+
+      // Show "+WATER" indicator when in flood
+      this.floodHazard.showWaterRefillIndicator(
+        this.player.sprite.x,
+        this.player.sprite.y,
+        delta
+      );
+    }
+
+    // Party zone update (Khao San)
+    if (this.partyZone) {
+      this.partyZone.update(this.player.sprite.x, this.player.sprite.y, delta);
+    }
+
     // Slippery zone check — show popup when entering
     const inSlippery = this.mapRenderer.isInSlipperyZone(
       this.player.sprite.x,
@@ -479,6 +537,8 @@ export class GameScene extends Phaser.Scene {
     this.gameOver = true;
 
     this.waterTruck.destroy();
+    if (this.floodHazard) this.floodHazard.destroy();
+    if (this.partyZone) this.partyZone.destroy();
 
     // Stop game music and ambient water
     soundManager.stopMusic(200);

@@ -6,6 +6,14 @@ import { WaterStation } from "../game/WaterStation";
 /** Supported map IDs */
 export type MapId = "chiangmai" | "khaosan";
 
+/** Zone rect (center-based) */
+export interface ZoneRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 /** Shared interface that both map modules satisfy */
 interface MapModule {
   getMapData(): number[][];
@@ -13,6 +21,8 @@ interface MapModule {
   getWaterStationPositions(): Array<{ x: number; y: number }>;
   getSpawnPositions(): Array<{ x: number; y: number }>;
   getSlipperyZones(): Array<{ x: number; y: number; w: number; h: number }>;
+  getFloodZones?: () => ZoneRect[];
+  getPartyZones?: () => ZoneRect[];
   MAP_WIDTH: number;
   MAP_HEIGHT: number;
   TILE_SIZE: number;
@@ -213,5 +223,25 @@ export class MapRenderer {
 
   getMapHeight(): number {
     return this.mapModule.MAP_HEIGHT;
+  }
+
+  /**
+   * Return flood zone rects if available (Khao San only).
+   */
+  getFloodZones(): ZoneRect[] {
+    if (this.mapModule.getFloodZones) {
+      return this.mapModule.getFloodZones();
+    }
+    return [];
+  }
+
+  /**
+   * Return party zone rects if available (Khao San only).
+   */
+  getPartyZones(): ZoneRect[] {
+    if (this.mapModule.getPartyZones) {
+      return this.mapModule.getPartyZones();
+    }
+    return [];
   }
 }

@@ -141,6 +141,11 @@ export class BootScene extends Phaser.Scene {
     this.createGrassTile();
     this.createPuddleTile();
 
+    // Khao San Road specific tiles
+    this.createNeonTile();
+    this.createFoodCartTile();
+    this.createHostelTile();
+
     // Water truck
     this.createWaterTruckTexture();
 
@@ -816,6 +821,149 @@ export class BootScene extends Phaser.Scene {
     gfx.fillRect(18, 14, 1, 1);
 
     gfx.generateTexture("tile_puddle", size, size);
+    gfx.destroy();
+  }
+
+  // ── Khao San Road tiles (32x32) ────────────────────────
+
+  private createNeonTile(): void {
+    const size = 32;
+    const gfx = this.make.graphics({ x: 0, y: 0 }, false);
+
+    // Dark wall base
+    gfx.fillStyle(0x2a2a3a, 1);
+    gfx.fillRect(0, 0, size, size);
+
+    // Neon sign post — vertical pole
+    gfx.fillStyle(0x666666, 1);
+    gfx.fillRect(14, 8, 4, 24);
+
+    // Neon sign board
+    gfx.fillStyle(0x111122, 1);
+    gfx.fillRect(4, 2, 24, 14);
+
+    // Neon border glow — hot pink
+    gfx.fillStyle(0xff44aa, 0.9);
+    gfx.fillRect(4, 2, 24, 2);   // top
+    gfx.fillRect(4, 14, 24, 2);  // bottom
+    gfx.fillRect(4, 2, 2, 14);   // left
+    gfx.fillRect(26, 2, 2, 14);  // right
+
+    // Inner neon text (abstract colored lines)
+    gfx.fillStyle(0x00ffcc, 0.8);
+    gfx.fillRect(8, 5, 6, 2);
+    gfx.fillStyle(0xff66ff, 0.8);
+    gfx.fillRect(16, 5, 8, 2);
+    gfx.fillStyle(0xffff44, 0.7);
+    gfx.fillRect(10, 9, 12, 2);
+
+    // Glow halo (subtle)
+    gfx.fillStyle(0xff44aa, 0.15);
+    gfx.fillRect(2, 0, 28, 18);
+
+    // Base ground
+    gfx.fillStyle(0x444455, 1);
+    gfx.fillRect(0, 28, size, 4);
+
+    gfx.generateTexture("tile_neon", size, size);
+    gfx.destroy();
+  }
+
+  private createFoodCartTile(): void {
+    const size = 32;
+    const gfx = this.make.graphics({ x: 0, y: 0 }, false);
+
+    // Ground base
+    gfx.fillStyle(0xc8b89a, 1);
+    gfx.fillRect(0, 0, size, size);
+
+    // Cart body — brown wood
+    gfx.fillStyle(0x8b5e3c, 1);
+    gfx.fillRect(4, 12, 24, 14);
+
+    // Cart top / counter
+    gfx.fillStyle(0xa07848, 1);
+    gfx.fillRect(3, 10, 26, 3);
+
+    // Awning — orange/red striped
+    gfx.fillStyle(0xdd5522, 1);
+    gfx.fillRect(2, 2, 28, 8);
+    gfx.fillStyle(0xeeaa33, 1);
+    gfx.fillRect(2, 2, 28, 2);
+    gfx.fillRect(2, 6, 28, 2);
+
+    // Awning poles
+    gfx.fillStyle(0x666666, 1);
+    gfx.fillRect(4, 2, 1, 10);
+    gfx.fillRect(27, 2, 1, 10);
+
+    // Food items on counter (colored dots)
+    gfx.fillStyle(0xff6644, 0.9);
+    gfx.fillRect(8, 11, 3, 2);   // satay
+    gfx.fillStyle(0xffcc22, 0.9);
+    gfx.fillRect(14, 11, 3, 2);  // pad thai
+    gfx.fillStyle(0x44bb44, 0.8);
+    gfx.fillRect(20, 11, 3, 2);  // som tum
+
+    // Wheels
+    gfx.fillStyle(0x333333, 1);
+    gfx.fillCircle(8, 27, 2);
+    gfx.fillCircle(24, 27, 2);
+
+    // Shadow
+    gfx.fillStyle(0x000000, 0.15);
+    gfx.fillRect(4, 28, 24, 4);
+
+    gfx.generateTexture("tile_foodcart", size, size);
+    gfx.destroy();
+  }
+
+  private createHostelTile(): void {
+    const size = 32;
+    const gfx = this.make.graphics({ x: 0, y: 0 }, false);
+
+    // Concrete wall base — gray
+    gfx.fillStyle(0x8a8a8a, 1);
+    gfx.fillRect(0, 0, size, size);
+
+    // Concrete block lines
+    gfx.fillStyle(0x777777, 0.6);
+    gfx.fillRect(0, 10, size, 1);
+    gfx.fillRect(0, 21, size, 1);
+    gfx.fillRect(15, 0, 1, size);
+
+    // Window — dark with frame
+    gfx.fillStyle(0x555566, 1);
+    gfx.fillRect(4, 4, 10, 8);
+    // Window frame
+    gfx.fillStyle(0x999999, 1);
+    gfx.fillRect(3, 3, 12, 1);
+    gfx.fillRect(3, 12, 12, 1);
+    gfx.fillRect(3, 3, 1, 10);
+    gfx.fillRect(14, 3, 1, 10);
+    // Window cross bar
+    gfx.fillRect(8, 3, 1, 10);
+    gfx.fillRect(3, 7, 12, 1);
+
+    // Glass reflection
+    gfx.fillStyle(0x88aacc, 0.3);
+    gfx.fillRect(5, 5, 3, 2);
+
+    // Second smaller window
+    gfx.fillStyle(0x555566, 1);
+    gfx.fillRect(20, 14, 8, 6);
+    gfx.fillStyle(0x999999, 1);
+    gfx.fillRect(19, 13, 10, 1);
+    gfx.fillRect(19, 20, 10, 1);
+    gfx.fillRect(19, 13, 1, 8);
+    gfx.fillRect(28, 13, 1, 8);
+
+    // Stain/weathering
+    gfx.fillStyle(0x707070, 0.3);
+    gfx.fillRect(2, 24, 4, 8);
+    gfx.fillRect(22, 24, 6, 8);
+
+    gfx.generateTexture("tile_hostel", size, size);
     gfx.destroy();
   }
 
