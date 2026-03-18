@@ -1,10 +1,10 @@
 import Phaser from "phaser";
 import { Player } from "../game/Player";
 import { DummyAI } from "../game/DummyAI";
-import { WaterStation } from "../game/WaterStation";
 import { HUD } from "../ui/HUD";
 import { PROJECTILE_SPEED, MATCH_DURATION, PROJECTILE_POOL_SIZE } from "../game/GameLogic";
 import { soundManager } from "../audio/SoundManager";
+import { matchStats } from "../game/MatchStats";
 import {
   splashOnHit,
   shootMuzzle,
@@ -12,6 +12,8 @@ import {
   eliminationBurst,
   ambientDrips,
 } from "../effects/ParticleEffects";
+import { MapRenderer } from "../map/MapRenderer";
+import { WaterTruck } from "../game/WaterTruck";
 
 interface GameData {
   character: string;
@@ -23,10 +25,8 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private ai!: DummyAI;
   private hud!: HUD;
-  private waterStations: WaterStation[] = [];
   private projectiles!: Phaser.Physics.Arcade.Group;
   private aiProjectiles!: Phaser.Physics.Arcade.Group;
-  private walls!: Phaser.Physics.Arcade.StaticGroup;
   private timeLeft = MATCH_DURATION;
   private gameOver = false;
   private gameData!: GameData;
@@ -34,6 +34,12 @@ export class GameScene extends Phaser.Scene {
   private waterLowPlayed = false;
   private muteButton!: Phaser.GameObjects.Text;
   private refillBubbleTimer = 0;
+  private mapRenderer!: MapRenderer;
+  private waterTruck!: WaterTruck;
+
+  // Slippery zone popup state
+  private wasInSlippery = false;
+  private slipperyPopup: Phaser.GameObjects.Text | null = null;
 
   constructor() {
     super({ key: "GameScene" });
@@ -43,51 +49,39 @@ export class GameScene extends Phaser.Scene {
     this.gameData = data;
     this.timeLeft = MATCH_DURATION;
     this.gameOver = false;
+    this.wasInSlippery = false;
+    matchStats.reset();
   }
 
   create(): void {
-    // Set world bounds (larger than camera for scrolling)
-    const mapWidth = 1200;
-    const mapHeight = 900;
+    // Render map using MapRenderer (replaces manual ground/wall drawing)
+    this.mapRenderer = new MapRenderer(this);
+    this.mapRenderer.render(true);
+
+    const mapWidth = this.mapRenderer.getMapWidth();
+    const mapHeight = this.mapRenderer.getMapHeight();
+
+    // Set world bounds to the Chiang Mai map (1280x960)
     this.physics.world.setBounds(0, 0, mapWidth, mapHeight);
 
-    // Draw ground tiles
-    for (let x = 0; x < mapWidth; x += 64) {
-      for (let y = 0; y < mapHeight; y += 64) {
-        this.add.image(x + 32, y + 32, "tile_ground").setScale(4).setDepth(0);
-      }
-    }
+    // Water truck hazard (offline mode — local 30s timer)
+    this.waterTruck = new WaterTruck(this, false);
 
-    // Walls around edges and some obstacles
-    this.walls = this.physics.add.staticGroup();
-    this.createWalls(mapWidth, mapHeight);
-
-    // Water stations at 4 corners-ish positions
-    const stationPositions = [
-      { x: 200, y: 200 },
-      { x: mapWidth - 200, y: 200 },
-      { x: 200, y: mapHeight - 200 },
-      { x: mapWidth - 200, y: mapHeight - 200 },
-    ];
-    stationPositions.forEach((pos) => {
-      this.waterStations.push(new WaterStation(this, pos.x, pos.y));
-    });
-
-    // Player
+    // Player — spawn at S1 position
     this.player = new Player(
       this,
-      mapWidth / 2 - 100,
-      mapHeight / 2,
+      48,
+      48,
       this.gameData.character,
       this.gameData.nationality,
       this.gameData.nickname
     );
 
-    // Dummy AI
+    // Dummy AI — spawn at S2 position
     this.ai = new DummyAI(
       this,
-      mapWidth / 2 + 100,
-      mapHeight / 2,
+      1168,
+      48,
       "Bot สมชาย"
     );
 
@@ -102,9 +96,9 @@ export class GameScene extends Phaser.Scene {
       allowGravity: false,
     });
 
-    // Collisions
-    this.physics.add.collider(this.player.sprite, this.walls);
-    this.physics.add.collider(this.ai.sprite, this.walls);
+    // Collisions with map walls
+    this.physics.add.collider(this.player.sprite, this.mapRenderer.walls);
+    this.physics.add.collider(this.ai.sprite, this.mapRenderer.walls);
 
     // Player bullets hit AI
     this.physics.add.overlap(
@@ -115,9 +109,11 @@ export class GameScene extends Phaser.Scene {
         this.ai.takeDamage(true);
         splashOnHit(this, this.ai.sprite.x, this.ai.sprite.y);
         soundManager.play("hit");
+        matchStats.recordHit();
 
         if (!this.ai.isAlive) {
           this.player.score += 1;
+          matchStats.recordElimination();
           eliminationBurst(this, this.ai.sprite.x, this.ai.sprite.y);
           soundManager.play("elimination");
           this.endGame(this.gameData.nickname);
@@ -150,12 +146,12 @@ export class GameScene extends Phaser.Scene {
     );
 
     // Bullets hit walls
-    this.physics.add.collider(this.projectiles, this.walls, (_wall, bullet) => {
+    this.physics.add.collider(this.projectiles, this.mapRenderer.walls, (_wall, bullet) => {
       const b = bullet as Phaser.Physics.Arcade.Sprite;
       splashOnHit(this, b.x, b.y);
       b.disableBody(true, true);
     });
-    this.physics.add.collider(this.aiProjectiles, this.walls, (_wall, bullet) => {
+    this.physics.add.collider(this.aiProjectiles, this.mapRenderer.walls, (_wall, bullet) => {
       const b = bullet as Phaser.Physics.Arcade.Sprite;
       splashOnHit(this, b.x, b.y);
       b.disableBody(true, true);
@@ -190,6 +186,10 @@ export class GameScene extends Phaser.Scene {
     // Initialize sound manager (in case not already done)
     soundManager.init();
 
+    // Crossfade to game music and start ambient water
+    soundManager.playMusic("game");
+    soundManager.startAmbientWater();
+
     // Camera follow player
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
     this.cameras.main.startFollow(this.player.sprite, true, 0.08, 0.08);
@@ -200,6 +200,10 @@ export class GameScene extends Phaser.Scene {
       callback: () => {
         if (this.gameOver) return;
         this.timeLeft--;
+        // Intensify music in last 30 seconds
+        if (this.timeLeft === 30) {
+          soundManager.intensifyMusic();
+        }
         if (this.timeLeft <= 0) {
           // Time's up — lower wet meter wins
           const winner =
@@ -227,6 +231,10 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     if (this.gameOver) return;
 
+    if (this.player.isAlive) {
+      matchStats.updateTimeSurvived(delta / 1000);
+    }
+
     this.player.update();
     const aiShootAngle = this.ai.update(
       delta,
@@ -245,12 +253,31 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    // Water station refill checks
+    // Water truck update
+    this.waterTruck.update(delta);
+
+    // Check water truck hit on player
+    if (this.waterTruck.isHitting(this.player.sprite.x, this.player.sprite.y)) {
+      this.player.takeDamage(false); // splash damage from truck
+      splashOnHit(this, this.player.sprite.x, this.player.sprite.y);
+    }
+
+    // Slippery zone check — show popup when entering
+    const inSlippery = this.mapRenderer.isInSlipperyZone(
+      this.player.sprite.x,
+      this.player.sprite.y
+    );
+    if (inSlippery && !this.wasInSlippery) {
+      this.showSlipperyPopup();
+    }
+    this.wasInSlippery = inSlippery;
+
+    // Water station refill checks (uses MapRenderer stations)
     let playerRefilling = false;
     let aiRefilling = false;
     const dt = delta / 1000;
 
-    for (const station of this.waterStations) {
+    for (const station of this.mapRenderer.waterStations) {
       if (station.isPlayerInRange(this.player.sprite.x, this.player.sprite.y)) {
         playerRefilling = true;
         this.player.refill(dt);
@@ -269,6 +296,7 @@ export class GameScene extends Phaser.Scene {
     // Refill sound management
     if (playerRefilling && !this.wasRefilling) {
       soundManager.play("refill");
+      matchStats.recordRefill();
     } else if (!playerRefilling && this.wasRefilling) {
       soundManager.stopRefill();
     }
@@ -313,9 +341,46 @@ export class GameScene extends Phaser.Scene {
     this.cleanupProjectiles(this.aiProjectiles);
   }
 
+  private showSlipperyPopup(): void {
+    if (this.slipperyPopup) {
+      this.slipperyPopup.destroy();
+    }
+    this.slipperyPopup = this.add
+      .text(
+        this.player.sprite.x,
+        this.player.sprite.y - 50,
+        "Slippery!",
+        {
+          fontSize: "14px",
+          color: "#88ddff",
+          fontFamily: "Kanit, sans-serif",
+          fontStyle: "bold",
+          stroke: "#003366",
+          strokeThickness: 2,
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(50);
+
+    this.tweens.add({
+      targets: this.slipperyPopup,
+      y: this.player.sprite.y - 80,
+      alpha: 0,
+      duration: 1200,
+      ease: "Power2",
+      onComplete: () => {
+        if (this.slipperyPopup) {
+          this.slipperyPopup.destroy();
+          this.slipperyPopup = null;
+        }
+      },
+    });
+  }
+
   private playerShoot(): void {
     if (!this.player.tryShoot()) return;
     soundManager.play("shoot");
+    matchStats.recordShot();
 
     const angle = this.player.getAimAngle();
     shootMuzzle(this, this.player.sprite.x, this.player.sprite.y, angle);
@@ -375,43 +440,15 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private createWalls(mapWidth: number, mapHeight: number): void {
-    const wallThickness = 32;
-
-    // Border walls
-    // Top
-    const topWall = this.add.rectangle(mapWidth / 2, wallThickness / 2, mapWidth, wallThickness, 0x5a3a2a).setDepth(5);
-    this.walls.add(topWall);
-    // Bottom
-    const bottomWall = this.add.rectangle(mapWidth / 2, mapHeight - wallThickness / 2, mapWidth, wallThickness, 0x5a3a2a).setDepth(5);
-    this.walls.add(bottomWall);
-    // Left
-    const leftWall = this.add.rectangle(wallThickness / 2, mapHeight / 2, wallThickness, mapHeight, 0x5a3a2a).setDepth(5);
-    this.walls.add(leftWall);
-    // Right
-    const rightWall = this.add.rectangle(mapWidth - wallThickness / 2, mapHeight / 2, wallThickness, mapHeight, 0x5a3a2a).setDepth(5);
-    this.walls.add(rightWall);
-
-    // Some obstacle walls in the middle for cover
-    const obstacles = [
-      { x: 400, y: 300, w: 64, h: 128 },
-      { x: 800, y: 600, w: 64, h: 128 },
-      { x: 600, y: 450, w: 128, h: 64 },
-      { x: 300, y: 700, w: 128, h: 64 },
-      { x: 900, y: 250, w: 64, h: 64 },
-    ];
-
-    obstacles.forEach((obs) => {
-      const wall = this.add
-        .rectangle(obs.x, obs.y, obs.w, obs.h, 0x5a3a2a)
-        .setDepth(5);
-      this.walls.add(wall);
-    });
-  }
-
   private endGame(winnerName: string): void {
     if (this.gameOver) return;
     this.gameOver = true;
+
+    this.waterTruck.destroy();
+
+    // Stop game music and ambient water
+    soundManager.stopMusic(200);
+    soundManager.stopAmbientWater();
 
     this.hud.showStatus(
       winnerName === this.gameData.nickname

@@ -134,8 +134,13 @@ export class BootScene extends Phaser.Scene {
     // Map tiles
     this.createGroundTile();
     this.createWallTile();
+    this.createTempleTile();
+    this.createRoadTile();
     this.createGrassTile();
     this.createPuddleTile();
+
+    // Water truck
+    this.createWaterTruckTexture();
 
     // Particle texture (small white circle for particle emitters)
     this.createParticleTexture();
@@ -650,6 +655,82 @@ export class BootScene extends Phaser.Scene {
     gfx.destroy();
   }
 
+  private createTempleTile(): void {
+    const size = 32;
+    const gfx = this.make.graphics({ x: 0, y: 0 }, false);
+
+    // Gold/orange temple base
+    gfx.fillStyle(0xc89030, 1);
+    gfx.fillRect(0, 0, size, size);
+
+    // Ornate block pattern
+    const blockH = 7;
+    const blockW = 14;
+    for (let row = 0; row < 5; row++) {
+      const offset = row % 2 === 0 ? 0 : 7;
+      const by = row * (blockH + 1);
+      for (let col = -1; col < 3; col++) {
+        const bx = offset + col * (blockW + 1);
+        const shade = row % 2 === 0 ? 0xd4a040 : 0xb88028;
+        gfx.fillStyle(shade, 1);
+        gfx.fillRect(
+          Math.max(0, bx),
+          by,
+          Math.min(blockW, size - Math.max(0, bx)),
+          blockH
+        );
+      }
+    }
+
+    // Gold trim lines
+    gfx.fillStyle(0xf0c848, 0.7);
+    gfx.fillRect(0, 0, size, 1);
+    gfx.fillRect(0, 8, size, 1);
+    gfx.fillRect(0, 16, size, 1);
+    gfx.fillRect(0, 24, size, 1);
+
+    // Naga-scale decorative pixels
+    gfx.fillStyle(0xe8b838, 0.5);
+    gfx.fillRect(4, 4, 2, 2);
+    gfx.fillRect(20, 12, 2, 2);
+    gfx.fillRect(12, 20, 2, 2);
+    gfx.fillRect(26, 28, 2, 2);
+
+    gfx.generateTexture("tile_temple", size, size);
+    gfx.destroy();
+  }
+
+  private createRoadTile(): void {
+    const size = 32;
+    const gfx = this.make.graphics({ x: 0, y: 0 }, false);
+
+    // Asphalt base — darker than ground
+    gfx.fillStyle(0x7a7a7a, 1);
+    gfx.fillRect(0, 0, size, size);
+
+    // Road surface variation
+    gfx.fillStyle(0x888888, 1);
+    gfx.fillRect(0, 0, size, 14);
+    gfx.fillStyle(0x707070, 1);
+    gfx.fillRect(0, 18, size, 14);
+
+    // White dashed center line
+    gfx.fillStyle(0xeeeeee, 0.8);
+    gfx.fillRect(4, 15, 10, 2);
+    gfx.fillRect(20, 15, 10, 2);
+
+    // Subtle noise
+    for (let i = 0; i < 8; i++) {
+      const px = Math.floor(Math.random() * size);
+      const py = Math.floor(Math.random() * size);
+      gfx.fillStyle(0x666666, 0.3);
+      gfx.fillRect(px, py, 1, 1);
+    }
+
+    gfx.generateTexture("tile_road", size, size);
+    gfx.destroy();
+  }
+
   private createGrassTile(): void {
     const size = 32;
     const gfx = this.make.graphics({ x: 0, y: 0 }, false);
@@ -705,6 +786,60 @@ export class BootScene extends Phaser.Scene {
     gfx.fillRect(18, 14, 1, 1);
 
     gfx.generateTexture("tile_puddle", size, size);
+    gfx.destroy();
+  }
+
+  // ── Water truck texture (32x16 songthaew shape) ─────────
+
+  private createWaterTruckTexture(): void {
+    const w = 32;
+    const h = 16;
+    const gfx = this.make.graphics({ x: 0, y: 0 }, false);
+
+    // Truck body — red songthaew base
+    gfx.fillStyle(0xcc2222, 1);
+    gfx.fillRect(2, 3, 26, 10);
+
+    // Cab (front, right side)
+    gfx.fillStyle(0xdd3333, 1);
+    gfx.fillRect(24, 2, 7, 12);
+
+    // Windshield
+    gfx.fillStyle(0x88ccee, 0.9);
+    gfx.fillRect(28, 4, 3, 5);
+
+    // Roof rack / water tank on back
+    gfx.fillStyle(0x3388cc, 1);
+    gfx.fillRect(3, 1, 18, 3);
+
+    // Tank highlight
+    gfx.fillStyle(0x55aadd, 0.7);
+    gfx.fillRect(4, 1, 8, 1);
+
+    // Gold trim (Thai decoration)
+    gfx.fillStyle(0xf0c040, 0.8);
+    gfx.fillRect(2, 3, 22, 1);
+    gfx.fillRect(2, 12, 22, 1);
+
+    // Wheels
+    gfx.fillStyle(0x222222, 1);
+    gfx.fillCircle(8, 14, 2);
+    gfx.fillCircle(24, 14, 2);
+
+    // Wheel hubcaps
+    gfx.fillStyle(0x888888, 1);
+    gfx.fillRect(7, 13, 2, 2);
+    gfx.fillRect(23, 13, 2, 2);
+
+    // Water spray nozzle (back)
+    gfx.fillStyle(0x6ab5f5, 0.8);
+    gfx.fillRect(0, 6, 3, 4);
+
+    // Headlight
+    gfx.fillStyle(0xffffaa, 0.9);
+    gfx.fillRect(30, 5, 1, 2);
+
+    gfx.generateTexture("water_truck", w, h);
     gfx.destroy();
   }
 

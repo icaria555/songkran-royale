@@ -67,6 +67,11 @@ export class CharacterScene extends Phaser.Scene {
     // Background
     this.cameras.main.setBackgroundColor(0x0a2540);
 
+    // Start menu music and ambient water
+    soundManager.init();
+    soundManager.playMusic("menu");
+    soundManager.startAmbientWater();
+
     // Title
     this.add
       .text(cx, 40, "🌊 SONGKRAN ROYALE 2569", {

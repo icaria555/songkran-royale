@@ -1,11 +1,11 @@
 import Phaser from "phaser";
 import { Room } from "colyseus.js";
 import { RemotePlayer } from "../game/RemotePlayer";
-import { WaterStation } from "../game/WaterStation";
 import { HUD } from "../ui/HUD";
 import { PLAYER_SPEED } from "../game/GameLogic";
 import { reconnect, setCurrentRoom, leaveRoom } from "../network/ColyseusClient";
 import { soundManager } from "../audio/SoundManager";
+import { matchStats } from "../game/MatchStats";
 import {
   splashOnHit,
   shootMuzzle,
@@ -13,6 +13,8 @@ import {
   eliminationBurst,
   ambientDrips,
 } from "../effects/ParticleEffects";
+import { MapRenderer } from "../map/MapRenderer";
+import { WaterTruck } from "../game/WaterTruck";
 
 interface OnlineGameData {
   character: string;
@@ -29,7 +31,8 @@ export class OnlineGameScene extends Phaser.Scene {
   private sessionId!: string;
   private gameData!: OnlineGameData;
   private hud!: HUD;
-  private waterStations: WaterStation[] = [];
+  private mapRenderer!: MapRenderer;
+  private waterTruck!: WaterTruck;
 
   // Local player sprite (client-side predicted)
   private localSprite!: Phaser.Physics.Arcade.Sprite;
@@ -52,9 +55,6 @@ export class OnlineGameScene extends Phaser.Scene {
   private inputSendTimer = 0;
   private readonly INPUT_SEND_RATE = 1000 / 30; // 30Hz input send
 
-  // Walls (visual only — server does collision)
-  private walls!: Phaser.GameObjects.Group;
-
   private gameOver = false;
 
   // Reconnect overlay
@@ -66,6 +66,10 @@ export class OnlineGameScene extends Phaser.Scene {
   private muteButton!: Phaser.GameObjects.Text;
   private refillBubbleTimer = 0;
 
+  // Slippery zone popup
+  private wasInSlippery = false;
+  private slipperyPopup: Phaser.GameObjects.Text | null = null;
+
   constructor() {
     super({ key: "OnlineGameScene" });
   }
@@ -76,34 +80,22 @@ export class OnlineGameScene extends Phaser.Scene {
     this.sessionId = data.room.sessionId;
     this.gameOver = false;
     this.isReconnecting = false;
+    this.wasInSlippery = false;
     this.remotePlayers.clear();
     this.projectileSprites.clear();
+    matchStats.reset();
   }
 
   create(): void {
-    const mapWidth = 1200;
-    const mapHeight = 900;
+    // Render map using MapRenderer (visual only — server handles collision)
+    this.mapRenderer = new MapRenderer(this);
+    this.mapRenderer.render(false);
 
-    // Draw ground
-    for (let x = 0; x < mapWidth; x += 64) {
-      for (let y = 0; y < mapHeight; y += 64) {
-        this.add.image(x + 32, y + 32, "tile_ground").setScale(4).setDepth(0);
-      }
-    }
+    const mapWidth = this.mapRenderer.getMapWidth();
+    const mapHeight = this.mapRenderer.getMapHeight();
 
-    // Visual walls
-    this.createWalls(mapWidth, mapHeight);
-
-    // Water stations (visual only — server handles refill logic)
-    const stationPositions = [
-      { x: 200, y: 200 },
-      { x: mapWidth - 200, y: 200 },
-      { x: 200, y: mapHeight - 200 },
-      { x: mapWidth - 200, y: mapHeight - 200 },
-    ];
-    stationPositions.forEach((pos) => {
-      this.waterStations.push(new WaterStation(this, pos.x, pos.y));
-    });
+    // Water truck (online mode — listens for server events)
+    this.waterTruck = new WaterTruck(this, true);
 
     // Keyboard
     const kb = this.input.keyboard!;
@@ -121,6 +113,7 @@ export class OnlineGameScene extends Phaser.Scene {
         if (pointer.x > this.scale.width - 50 && pointer.y < 40) return;
         this.room.send("shoot", {});
         soundManager.play("shoot");
+        matchStats.recordShot();
         if (this.localSprite) {
           shootMuzzle(this, this.localSprite.x, this.localSprite.y, this.aimAngle);
         }
@@ -147,6 +140,10 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Initialize sound manager
     soundManager.init();
+
+    // Crossfade to game music and start ambient water
+    soundManager.playMusic("game");
+    soundManager.startAmbientWater();
 
     // Camera
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
@@ -252,6 +249,7 @@ export class OnlineGameScene extends Phaser.Scene {
             r.setAlive(alive);
             if (!alive) {
               eliminationBurst(this, r.sprite.x, r.sprite.y);
+              matchStats.recordElimination();
             }
           }
           if (!alive) {
@@ -266,6 +264,7 @@ export class OnlineGameScene extends Phaser.Scene {
               splashOnHit(this, r.sprite.x, r.sprite.y);
             }
             soundManager.play("hit");
+            matchStats.recordHit();
           }
           (player as any).previousWet = wet;
         });
@@ -309,6 +308,15 @@ export class OnlineGameScene extends Phaser.Scene {
       }
     });
 
+    // Water truck events from server
+    room.onMessage("waterTruck", (data: { phase: string; x?: number }) => {
+      this.waterTruck.onServerEvent(data.phase, data.x);
+    });
+
+    room.onMessage("waterTruckSync", (data: { x: number }) => {
+      this.waterTruck.syncPosition(data.x);
+    });
+
     // Game phase changes
     room.state.listen("phase", (phase: string) => {
       if (phase === "countdown") {
@@ -319,6 +327,10 @@ export class OnlineGameScene extends Phaser.Scene {
       }
       if (phase === "ended") {
         this.gameOver = true;
+        // Stop game music and ambient water
+        soundManager.stopMusic(200);
+        soundManager.stopAmbientWater();
+        this.waterTruck.destroy();
         const winnerId = room.state.winnerId;
         const winner = room.state.players.get(winnerId);
         const winnerName = winner?.nickname || "Unknown";
@@ -348,10 +360,14 @@ export class OnlineGameScene extends Phaser.Scene {
     // Timer
     room.state.listen("timeLeft", (time: number) => {
       this.hud.updateTimer(time);
+      // Intensify music in last 30 seconds
+      if (time === 30) {
+        soundManager.intensifyMusic();
+      }
     });
 
     // Handle disconnect — attempt reconnect
-    room.onLeave((code) => {
+    room.onLeave((_code) => {
       if (!this.gameOver && this.scene.isActive("OnlineGameScene")) {
         this.startReconnect();
       }
@@ -477,6 +493,12 @@ export class OnlineGameScene extends Phaser.Scene {
     if (this.gameOver || this.isReconnecting) return;
     if (!this.localSprite) return;
 
+    // Track survival time
+    matchStats.updateTimeSurvived(delta / 1000);
+
+    // Water truck update (online: mainly for splash trail visuals)
+    this.waterTruck.update(delta);
+
     // Update local player position from server state
     const serverPlayer = this.room.state.players.get(this.sessionId);
     if (serverPlayer) {
@@ -540,12 +562,22 @@ export class OnlineGameScene extends Phaser.Scene {
     // Update remote players (interpolation)
     this.remotePlayers.forEach((remote) => remote.update());
 
-    // Water station highlight
+    // Slippery zone popup
+    const inSlippery = this.mapRenderer.isInSlipperyZone(
+      this.localSprite.x,
+      this.localSprite.y
+    );
+    if (inSlippery && !this.wasInSlippery) {
+      this.showSlipperyPopup();
+    }
+    this.wasInSlippery = inSlippery;
+
+    // Water station highlight (uses MapRenderer stations)
     if (serverPlayer) {
-      const isRefilling = this.waterStations.some((s) =>
+      const isRefilling = this.mapRenderer.waterStations.some((s) =>
         s.isPlayerInRange(this.localSprite.x, this.localSprite.y)
       );
-      for (const station of this.waterStations) {
+      for (const station of this.mapRenderer.waterStations) {
         station.setHighlight(
           station.isPlayerInRange(this.localSprite.x, this.localSprite.y)
         );
@@ -554,6 +586,7 @@ export class OnlineGameScene extends Phaser.Scene {
       // Refill sound management
       if (isRefilling && !this.wasRefilling) {
         soundManager.play("refill");
+        matchStats.recordRefill();
       } else if (!isRefilling && this.wasRefilling) {
         soundManager.stopRefill();
       }
@@ -586,25 +619,39 @@ export class OnlineGameScene extends Phaser.Scene {
     });
   }
 
-  private createWalls(mapWidth: number, mapHeight: number): void {
-    const wallThickness = 32;
+  private showSlipperyPopup(): void {
+    if (this.slipperyPopup) {
+      this.slipperyPopup.destroy();
+    }
+    this.slipperyPopup = this.add
+      .text(
+        this.localSprite.x,
+        this.localSprite.y - 50,
+        "Slippery!",
+        {
+          fontSize: "14px",
+          color: "#88ddff",
+          fontFamily: "Kanit, sans-serif",
+          fontStyle: "bold",
+          stroke: "#003366",
+          strokeThickness: 2,
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(50);
 
-    // Border walls
-    this.add.rectangle(mapWidth / 2, wallThickness / 2, mapWidth, wallThickness, 0x5a3a2a).setDepth(5);
-    this.add.rectangle(mapWidth / 2, mapHeight - wallThickness / 2, mapWidth, wallThickness, 0x5a3a2a).setDepth(5);
-    this.add.rectangle(wallThickness / 2, mapHeight / 2, wallThickness, mapHeight, 0x5a3a2a).setDepth(5);
-    this.add.rectangle(mapWidth - wallThickness / 2, mapHeight / 2, wallThickness, mapHeight, 0x5a3a2a).setDepth(5);
-
-    // Obstacles
-    const obstacles = [
-      { x: 400, y: 300, w: 64, h: 128 },
-      { x: 800, y: 600, w: 64, h: 128 },
-      { x: 600, y: 450, w: 128, h: 64 },
-      { x: 300, y: 700, w: 128, h: 64 },
-      { x: 900, y: 250, w: 64, h: 64 },
-    ];
-    obstacles.forEach((obs) => {
-      this.add.rectangle(obs.x, obs.y, obs.w, obs.h, 0x5a3a2a).setDepth(5);
+    this.tweens.add({
+      targets: this.slipperyPopup,
+      y: this.localSprite.y - 80,
+      alpha: 0,
+      duration: 1200,
+      ease: "Power2",
+      onComplete: () => {
+        if (this.slipperyPopup) {
+          this.slipperyPopup.destroy();
+          this.slipperyPopup = null;
+        }
+      },
     });
   }
 }
