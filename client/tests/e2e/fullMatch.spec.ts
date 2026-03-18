@@ -48,8 +48,12 @@ async function completeCharacterSelect(page: Page, nickname: string) {
  * Returns the scene we land on.
  */
 async function clickQuickMatchAndWait(page: Page): Promise<string> {
-  // Click Quick Match button (center of lobby, ~y=310)
-  await clickCanvas(page, 400, 235);
+  // Wait for LobbyScene to fully render its main menu
+  await waitForPhaserScene(page, "LobbyScene");
+  await page.waitForTimeout(800);
+
+  // Click Quick Match button (rectangle center at y=240)
+  await clickCanvas(page, 400, 240);
   await page.waitForTimeout(5000); // wait for server connection attempt + possible fallback
 
   const scene = await getPhaserSceneKey(page);
@@ -205,8 +209,8 @@ test.describe("Full Match — Online Mode", () => {
     await waitForPhaserScene(page2, "LobbyScene");
 
     // Click Quick Match
-    await clickCanvas(page1, 400, 310);
-    await clickCanvas(page2, 400, 310);
+    await clickCanvas(page1, 400, 240);
+    await clickCanvas(page2, 400, 240);
     await page1.waitForTimeout(3000);
 
     await page1.screenshot({ path: `${SCREENSHOT_DIR}/online-02-p1-joined.png` });
@@ -244,8 +248,8 @@ test.describe("Full Match — Online Mode", () => {
     await waitForPhaserScene(page1, "LobbyScene");
     await waitForPhaserScene(page2, "LobbyScene");
 
-    await clickCanvas(page1, 400, 310);
-    await clickCanvas(page2, 400, 310);
+    await clickCanvas(page1, 400, 240);
+    await clickCanvas(page2, 400, 240);
     await page1.waitForTimeout(3000);
     await clickCanvas(page1, 400, 460);
     await clickCanvas(page2, 400, 460);
@@ -282,8 +286,8 @@ test.describe("Full Match — Online Mode", () => {
     await waitForPhaserScene(page1, "LobbyScene");
     await waitForPhaserScene(page2, "LobbyScene");
 
-    await clickCanvas(page1, 400, 310);
-    await clickCanvas(page2, 400, 310);
+    await clickCanvas(page1, 400, 240);
+    await clickCanvas(page2, 400, 240);
     await page1.waitForTimeout(3000);
     await clickCanvas(page1, 400, 460);
     await clickCanvas(page2, 400, 460);
