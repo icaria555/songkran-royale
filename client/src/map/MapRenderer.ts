@@ -1,31 +1,45 @@
 import Phaser from "phaser";
-import {
-  getMapData,
-  getObstacleRects,
-  getWaterStationPositions,
-  getSpawnPositions,
-  getSlipperyZones,
-  TILE_SIZE,
-  MAP_W,
-  MAP_H,
-  MAP_WIDTH,
-  MAP_HEIGHT,
-} from "./ChiangMaiMap";
+import * as ChiangMaiMap from "./ChiangMaiMap";
+import * as KhaoSanMap from "./KhaoSanMap";
 import { WaterStation } from "../game/WaterStation";
 
+/** Supported map IDs */
+export type MapId = "chiangmai" | "khaosan";
+
+/** Shared interface that both map modules satisfy */
+interface MapModule {
+  getMapData(): number[][];
+  getObstacleRects(): Array<{ x: number; y: number; w: number; h: number }>;
+  getWaterStationPositions(): Array<{ x: number; y: number }>;
+  getSpawnPositions(): Array<{ x: number; y: number }>;
+  getSlipperyZones(): Array<{ x: number; y: number; w: number; h: number }>;
+  MAP_WIDTH: number;
+  MAP_HEIGHT: number;
+  TILE_SIZE: number;
+  MAP_W: number;
+  MAP_H: number;
+}
+
+const MAP_MODULES: Record<MapId, MapModule> = {
+  chiangmai: ChiangMaiMap,
+  khaosan: KhaoSanMap,
+};
+
 /**
- * MapRenderer — draws the Chiang Mai tilemap and sets up physics bodies.
+ * MapRenderer — draws the tilemap and sets up physics bodies.
+ * Supports multiple maps via the mapId parameter.
  *
  * Tile texture mapping:
  *   0 (ground)      -> tile_ground
  *   1 (building)    -> tile_wall
- *   2 (temple)      -> tile_temple
+ *   2 (temple/bar)  -> tile_temple
  *   3 (road marking)-> tile_road
  *   4 (cover)       -> tile_wall (same brick look, smaller)
- *   5 (puddle)      -> tile_puddle
+ *   5 (puddle/flood)-> tile_puddle
  *   6 (water stn)   -> tile_ground (station sprite drawn separately)
  *   7 (alley wall)  -> tile_wall
  *   8 (spawn)       -> tile_ground
+ *   9 (party zone)  -> tile_ground
  */
 
 const TILE_TEXTURE: Record<number, string> = {
@@ -38,11 +52,14 @@ const TILE_TEXTURE: Record<number, string> = {
   6: "tile_ground",
   7: "tile_wall",
   8: "tile_ground",
+  9: "tile_ground",
 };
 
 export class MapRenderer {
   private scene: Phaser.Scene;
   private slipperyOverlays: Phaser.GameObjects.Rectangle[] = [];
+  private mapModule: MapModule;
+  readonly mapId: MapId;
 
   /** Populated after render — use for physics collisions in GameScene */
   walls!: Phaser.Physics.Arcade.StaticGroup;
@@ -50,8 +67,10 @@ export class MapRenderer {
   /** Populated after render — use for refill logic */
   waterStations: WaterStation[] = [];
 
-  constructor(scene: Phaser.Scene) {
+  constructor(scene: Phaser.Scene, mapId: MapId = "chiangmai") {
     this.scene = scene;
+    this.mapId = mapId;
+    this.mapModule = MAP_MODULES[mapId] || MAP_MODULES.chiangmai;
   }
 
   /**
@@ -79,7 +98,10 @@ export class MapRenderer {
   // ── Tile grid ──────────────────────────────────────────
 
   private drawTileGrid(): void {
-    const mapData = getMapData();
+    const mapData = this.mapModule.getMapData();
+    const MAP_H = this.mapModule.MAP_H;
+    const MAP_W = this.mapModule.MAP_W;
+    const TILE_SIZE = this.mapModule.TILE_SIZE;
     for (let row = 0; row < MAP_H; row++) {
       for (let col = 0; col < MAP_W; col++) {
         const tileId = mapData[row][col];
@@ -94,7 +116,7 @@ export class MapRenderer {
   // ── Obstacles with physics ─────────────────────────────
 
   private createObstaclePhysics(): void {
-    const obstacles = getObstacleRects();
+    const obstacles = this.mapModule.getObstacleRects();
     for (const obs of obstacles) {
       const rect = this.scene.add
         .rectangle(obs.x, obs.y, obs.w, obs.h, 0x000000, 0)
@@ -113,7 +135,7 @@ export class MapRenderer {
   // ── Slippery zone overlays ─────────────────────────────
 
   private createSlipperyOverlays(): void {
-    const zones = getSlipperyZones();
+    const zones = this.mapModule.getSlipperyZones();
     for (const zone of zones) {
       // Semi-transparent blue-white overlay
       const overlay = this.scene.add
@@ -136,7 +158,7 @@ export class MapRenderer {
   // ── Water stations ─────────────────────────────────────
 
   private createWaterStations(): void {
-    const positions = getWaterStationPositions();
+    const positions = this.mapModule.getWaterStationPositions();
     for (const pos of positions) {
       this.waterStations.push(new WaterStation(this.scene, pos.x, pos.y));
     }
@@ -145,7 +167,7 @@ export class MapRenderer {
   // ── Spawn point markers ────────────────────────────────
 
   private createSpawnMarkers(): void {
-    const spawns = getSpawnPositions();
+    const spawns = this.mapModule.getSpawnPositions();
     for (let i = 0; i < spawns.length; i++) {
       const sp = spawns[i];
       // Subtle diamond marker
@@ -172,7 +194,7 @@ export class MapRenderer {
    * Check if a world position is inside any slippery zone.
    */
   isInSlipperyZone(x: number, y: number): boolean {
-    const zones = getSlipperyZones();
+    const zones = this.mapModule.getSlipperyZones();
     for (const z of zones) {
       const left = z.x - z.w / 2;
       const right = z.x + z.w / 2;
@@ -186,10 +208,10 @@ export class MapRenderer {
   }
 
   getMapWidth(): number {
-    return MAP_WIDTH;
+    return this.mapModule.MAP_WIDTH;
   }
 
   getMapHeight(): number {
-    return MAP_HEIGHT;
+    return this.mapModule.MAP_HEIGHT;
   }
 }

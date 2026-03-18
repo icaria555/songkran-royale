@@ -6,6 +6,7 @@ import { GameScene } from "../scenes/GameScene";
 import { OnlineGameScene } from "../scenes/OnlineGameScene";
 import { ResultScene } from "../scenes/ResultScene";
 import { LeaderboardScene } from "../scenes/LeaderboardScene";
+import { BattlePassScene } from "../scenes/BattlePassScene";
 
 export const GAME_WIDTH = 800;
 export const GAME_HEIGHT = 600;
@@ -36,5 +37,5 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, CharacterScene, LobbyScene, GameScene, OnlineGameScene, ResultScene, LeaderboardScene],
+  scene: [BootScene, CharacterScene, LobbyScene, GameScene, OnlineGameScene, ResultScene, LeaderboardScene, BattlePassScene],
 };

@@ -30,11 +30,14 @@ export class WaterTruck {
   // Splash trail timer
   private splashTimer = 0;
 
-  constructor(scene: Phaser.Scene, online: boolean) {
+  private disabled: boolean;
+
+  constructor(scene: Phaser.Scene, online: boolean, disabled = false) {
     this.scene = scene;
     this.isOnline = online;
+    this.disabled = disabled;
 
-    if (!online) {
+    if (!online && !disabled) {
       // Offline mode: start the periodic timer
       this.scheduleNextTruck();
     }

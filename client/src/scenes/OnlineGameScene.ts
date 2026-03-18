@@ -13,7 +13,7 @@ import {
   eliminationBurst,
   ambientDrips,
 } from "../effects/ParticleEffects";
-import { MapRenderer } from "../map/MapRenderer";
+import { MapRenderer, type MapId } from "../map/MapRenderer";
 import { WaterTruck } from "../game/WaterTruck";
 import { TouchControls, isMobile } from "../ui/TouchControls";
 import { getSelectedSkin } from "../skins/WeaponSkins";
@@ -23,6 +23,7 @@ interface OnlineGameData {
   nationality: string;
   nickname: string;
   room: Room;
+  mapId?: MapId;
 }
 
 const RECONNECT_TIMEOUT_MS = 30_000;
@@ -90,15 +91,18 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Read mapId from room state (if available) or from scene data
+    const mapId: MapId = this.room.state?.mapId || this.gameData.mapId || "chiangmai";
+
     // Render map using MapRenderer (visual only — server handles collision)
-    this.mapRenderer = new MapRenderer(this);
+    this.mapRenderer = new MapRenderer(this, mapId);
     this.mapRenderer.render(false);
 
     const mapWidth = this.mapRenderer.getMapWidth();
     const mapHeight = this.mapRenderer.getMapHeight();
 
-    // Water truck (online mode — listens for server events)
-    this.waterTruck = new WaterTruck(this, true);
+    // Water truck (online mode — listens for server events; disabled on khaosan)
+    this.waterTruck = new WaterTruck(this, true, mapId !== "chiangmai");
 
     // Keyboard
     const kb = this.input.keyboard!;

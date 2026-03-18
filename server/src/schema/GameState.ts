@@ -47,4 +47,5 @@ export class GameState extends Schema {
   @type("string") winnerId: string = "";
   @type("string") matchId: string = "";
   @type("int32") countdownTimer: number = 3;
+  @type("string") mapId: string = "chiangmai";
 }

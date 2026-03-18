@@ -4,6 +4,7 @@ import { GameRoom } from "./GameRoom";
 interface PrivateRoomCreateOptions {
   private?: boolean;
   roomCode?: string;
+  mapId?: string;
 }
 
 interface PrivateJoinOptions {
@@ -29,10 +30,11 @@ export class PrivateRoom extends GameRoom {
     this.roomCode = options?.roomCode || this.generateRoomCode();
 
     // Call parent onCreate to set up game state, handlers, loop, etc.
-    super.onCreate();
+    // Pass mapId through to GameRoom.onCreate
+    super.onCreate({ mapId: options?.mapId });
 
     // Store the room code in metadata so clients can find it
-    await this.setMetadata({ roomCode: this.roomCode, private: true });
+    await this.setMetadata({ roomCode: this.roomCode, private: true, mapId: options?.mapId || "chiangmai" });
 
     console.log(
       `[PrivateRoom] Created room ${this.roomId} with code: ${this.roomCode}`

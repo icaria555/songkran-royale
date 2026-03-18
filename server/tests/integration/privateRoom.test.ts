@@ -145,6 +145,7 @@ describe("PrivateRoom — integration", () => {
     expect((room as any).setMetadata).toHaveBeenCalledWith({
       roomCode: "XYZ789",
       private: true,
+      mapId: "chiangmai",
     });
     expect((room as any).metadata.roomCode).toBe("XYZ789");
   });

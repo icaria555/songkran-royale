@@ -30,6 +30,7 @@ export interface JoinOptions {
   nickname: string;
   character: string;
   nationality: string;
+  mapId?: string;
 }
 
 // ── Reconnection token helpers ─────────────────────────────────

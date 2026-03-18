@@ -12,7 +12,7 @@ import {
   eliminationBurst,
   ambientDrips,
 } from "../effects/ParticleEffects";
-import { MapRenderer } from "../map/MapRenderer";
+import { MapRenderer, type MapId } from "../map/MapRenderer";
 import { WaterTruck } from "../game/WaterTruck";
 import { TouchControls, isMobile } from "../ui/TouchControls";
 import { getSelectedSkin } from "../skins/WeaponSkins";
@@ -21,6 +21,7 @@ interface GameData {
   character: string;
   nationality: string;
   nickname: string;
+  mapId?: MapId;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -57,18 +58,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    const mapId: MapId = this.gameData.mapId || "chiangmai";
+
     // Render map using MapRenderer (replaces manual ground/wall drawing)
-    this.mapRenderer = new MapRenderer(this);
+    this.mapRenderer = new MapRenderer(this, mapId);
     this.mapRenderer.render(true);
 
     const mapWidth = this.mapRenderer.getMapWidth();
     const mapHeight = this.mapRenderer.getMapHeight();
 
-    // Set world bounds to the Chiang Mai map (1280x960)
+    // Set world bounds to the map dimensions
     this.physics.world.setBounds(0, 0, mapWidth, mapHeight);
 
-    // Water truck hazard (offline mode — local 30s timer)
-    this.waterTruck = new WaterTruck(this, false);
+    // Water truck hazard — only on Chiang Mai (offline mode — local 30s timer)
+    this.waterTruck = new WaterTruck(this, false, mapId !== "chiangmai");
 
     // Player — spawn at S1 position
     this.player = new Player(
@@ -501,6 +504,7 @@ export class GameScene extends Phaser.Scene {
         playerScore: this.player.score,
         aiWet: this.ai.wetMeter,
         timeLeft: this.timeLeft,
+        mapId: this.gameData.mapId || "chiangmai",
       });
     });
   }

@@ -15,23 +15,15 @@ import {
   MIN_PLAYERS_TO_START,
   MAX_PLAYERS_PER_ROOM,
   COUNTDOWN_SECONDS,
-  WATER_STATION_POSITIONS,
-  SPAWN_POSITIONS,
-  MAP_WIDTH,
-  MAP_HEIGHT,
   PROJECTILE_LIFETIME,
   RECONNECT_GRACE_PERIOD,
-  SLIPPERY_ZONES,
   SLIPPERY_SPEED_MULTIPLIER,
-  WATER_TRUCK,
 } from "../game/GameConstants";
 import {
-  clampPlayerPosition,
-  resolvePlayerObstacleCollision,
   projectileHitsPlayer,
-  projectileCollidesWithWall,
-  getRefillStationIndex,
 } from "../game/CollisionHandler";
+import { createMapCollisionHelpers } from "../game/CollisionHandler";
+import { getMapConfig, type MapConfig } from "../game/maps/MapRegistry";
 import { countAlivePlayers, getWinnerId, getLowestWetPlayer } from "../game/WinCondition";
 import { Leaderboard } from "../leaderboard/Leaderboard";
 
@@ -46,8 +38,6 @@ interface JoinOptions {
   nationality: string;
 }
 
-// SPAWN_POSITIONS imported from GameConstants (Chiang Mai map layout)
-
 /** Check if a point is inside a rect {x,y,w,h} where x,y = center */
 function pointInRect(px: number, py: number, rect: { x: number; y: number; w: number; h: number }): boolean {
   const halfW = rect.w / 2;
@@ -59,19 +49,36 @@ export class GameRoom extends Room<{ state: GameState }> {
   private projectileIdCounter = 0;
   private projectileTimers = new Map<string, number>(); // id → creation timestamp
   private countdownInterval: ReturnType<typeof setInterval> | null = null;
+
+  // ── Map config ────────────────────────────────────────────────
+  protected mapConfig!: MapConfig;
+  private collision!: ReturnType<typeof createMapCollisionHelpers>;
+
+  // ── Chiang Mai: Water Truck state ─────────────────────────────
   private waterTruckX: number | null = null; // null = not active
   private waterTruckTimer = 0; // ms since last truck
   private waterTruckWarned = false;
 
-  onCreate(_options?: Record<string, unknown>): void {
+  // ── Khao San: Flood state ─────────────────────────────────────
+  private floodTimer = 0; // ms into current flood cycle
+  private floodActive = false;
+  private floodWarned = false;
+
+  onCreate(options?: Record<string, unknown>): void {
+    // ── Load map config ───────────────────────────────────────
+    const mapId = (options?.mapId as string) || "chiangmai";
+    this.mapConfig = getMapConfig(mapId);
+    this.collision = createMapCollisionHelpers(this.mapConfig);
+
     this.setState(new GameState());
+    this.state.mapId = mapId;
     this.maxClients = MAX_PLAYERS_PER_ROOM;
 
     // Generate a match ID
     this.state.matchId = this.generateMatchId();
 
-    // Set up water stations
-    WATER_STATION_POSITIONS.forEach((pos, i) => {
+    // Set up water stations from map config
+    this.mapConfig.waterStations.forEach((pos, i) => {
       const tank = new TankState();
       tank.id = `station_${i}`;
       tank.x = pos.x;
@@ -98,12 +105,12 @@ export class GameRoom extends Room<{ state: GameState }> {
       this.gameLoop(deltaTime);
     }, TICK_INTERVAL);
 
-    console.log(`[GameRoom] Created room ${this.roomId} (match: ${this.state.matchId})`);
+    console.log(`[GameRoom] Created room ${this.roomId} (match: ${this.state.matchId}, map: ${mapId})`);
   }
 
   onJoin(client: Client, options: JoinOptions): void {
-    const spawnIndex = this.state.players.size % SPAWN_POSITIONS.length;
-    const spawn = SPAWN_POSITIONS[spawnIndex];
+    const spawnIndex = this.state.players.size % this.mapConfig.spawnPositions.length;
+    const spawn = this.mapConfig.spawnPositions[spawnIndex];
 
     const player = new PlayerState();
     player.id = client.sessionId;
@@ -145,15 +152,11 @@ export class GameRoom extends Room<{ state: GameState }> {
           `[GameRoom] Holding seat for ${player.nickname} (${RECONNECT_GRACE_PERIOD / 1000}s)`
         );
 
-        // allowReconnection returns a promise that resolves when the client reconnects
-        // or rejects when the timeout expires.
         await this.allowReconnection(client, RECONNECT_GRACE_PERIOD / 1000);
 
-        // Client reconnected — restore full state (it was never removed)
         console.log(`[GameRoom] ${player.nickname} reconnected!`);
         return;
       } catch {
-        // Reconnect window expired — fall through to removal
         console.log(
           `[GameRoom] ${player.nickname} reconnect window expired, removing`
         );
@@ -276,18 +279,18 @@ export class GameRoom extends Room<{ state: GameState }> {
       let newY = player.y + player.vy * dt;
 
       // Clamp to map bounds
-      const clamped = clampPlayerPosition(newX, newY);
+      const clamped = this.collision.clampPlayerPosition(newX, newY);
       newX = clamped.x;
       newY = clamped.y;
 
       // Resolve obstacle collisions
-      const resolved = resolvePlayerObstacleCollision(newX, newY, prevX, prevY);
+      const resolved = this.collision.resolvePlayerObstacleCollision(newX, newY, prevX, prevY);
       player.x = resolved.x;
       player.y = resolved.y;
 
       // Slippery zone check — reduce effective movement speed
       let inSlippery = false;
-      for (const zone of SLIPPERY_ZONES) {
+      for (const zone of this.mapConfig.slipperyZones) {
         if (pointInRect(player.x, player.y, zone)) {
           inSlippery = true;
           break;
@@ -300,8 +303,26 @@ export class GameRoom extends Room<{ state: GameState }> {
         player.y = prevY + (player.y - prevY) * factor;
       }
 
-      // Water refill check
-      const stationIdx = getRefillStationIndex(player.x, player.y);
+      // Khao San flood zone: speed penalty + water refill when flood is active
+      if (this.floodActive && this.mapConfig.hazards.flood) {
+        const flood = this.mapConfig.hazards.flood;
+        for (const zone of flood.zones) {
+          if (pointInRect(player.x, player.y, zone)) {
+            // Apply speed penalty (lerp back toward prev position)
+            player.x = prevX + (player.x - prevX) * flood.speedMultiplier;
+            player.y = prevY + (player.y - prevY) * flood.speedMultiplier;
+            // Free water refill
+            player.waterLevel = Math.min(
+              MAX_WATER_LEVEL,
+              player.waterLevel + flood.refillPerSecond * dt
+            );
+            break;
+          }
+        }
+      }
+
+      // Water refill check (stations)
+      const stationIdx = this.collision.getRefillStationIndex(player.x, player.y);
       if (stationIdx >= 0) {
         player.waterLevel = Math.min(
           MAX_WATER_LEVEL,
@@ -327,7 +348,7 @@ export class GameRoom extends Room<{ state: GameState }> {
       }
 
       // Check wall collision
-      if (projectileCollidesWithWall(proj.x, proj.y)) {
+      if (this.collision.projectileCollidesWithWall(proj.x, proj.y)) {
         toRemove.push(proj.id);
         return;
       }
@@ -362,32 +383,51 @@ export class GameRoom extends Room<{ state: GameState }> {
       this.projectileTimers.delete(id);
     }
 
-    // ── Water Truck Hazard ──────────────────────────────────────
+    // ── Map-specific hazards ────────────────────────────────────
+
+    // Chiang Mai: Water Truck Hazard
+    if (this.mapConfig.hazards.waterTruck) {
+      this.updateWaterTruck(deltaTime, dt);
+    }
+
+    // Khao San: Street Flood Hazard
+    if (this.mapConfig.hazards.flood) {
+      this.updateFloodHazard(deltaTime);
+    }
+
+    // Check win condition
+    this.checkWinCondition();
+  }
+
+  // ── Water Truck (Chiang Mai only) ─────────────────────────────
+
+  private updateWaterTruck(deltaTime: number, dt: number): void {
+    const truck = this.mapConfig.hazards.waterTruck!;
     this.waterTruckTimer += deltaTime;
 
     if (this.waterTruckX === null) {
       // Truck not active — check if it's time to spawn
-      if (this.waterTruckTimer >= WATER_TRUCK.intervalMs) {
+      if (this.waterTruckTimer >= truck.intervalMs) {
         // Send warning first
-        if (!this.waterTruckWarned && this.waterTruckTimer >= WATER_TRUCK.intervalMs - WATER_TRUCK.warningMs) {
+        if (!this.waterTruckWarned && this.waterTruckTimer >= truck.intervalMs - truck.warningMs) {
           this.waterTruckWarned = true;
           this.broadcast("waterTruckWarning", {});
         }
-        this.waterTruckX = WATER_TRUCK.startX;
+        this.waterTruckX = truck.startX;
         this.waterTruckTimer = 0;
         this.waterTruckWarned = false;
       }
     } else {
       // Truck is active — move it
-      this.waterTruckX += WATER_TRUCK.speed * dt;
-      this.broadcast("waterTruckPos", { x: this.waterTruckX, y: WATER_TRUCK.y });
+      this.waterTruckX += truck.speed * dt;
+      this.broadcast("waterTruckPos", { x: this.waterTruckX, y: truck.y });
 
       // Check if any player is in the truck's path
       this.state.players.forEach((player) => {
         if (!player.isAlive) return;
-        if (Math.abs(player.y - WATER_TRUCK.y) < WATER_TRUCK.hitRadius &&
+        if (Math.abs(player.y - truck.y) < truck.hitRadius &&
             Math.abs(player.x - this.waterTruckX!) < 64) {
-          player.wetMeter = Math.min(MAX_WET_METER, player.wetMeter + WATER_TRUCK.wetDamage);
+          player.wetMeter = Math.min(MAX_WET_METER, player.wetMeter + truck.wetDamage);
           if (player.wetMeter >= MAX_WET_METER) {
             player.isAlive = false;
           }
@@ -395,13 +435,39 @@ export class GameRoom extends Room<{ state: GameState }> {
       });
 
       // Remove truck when off-screen
-      if (this.waterTruckX > WATER_TRUCK.endX) {
+      if (this.waterTruckX > truck.endX) {
         this.waterTruckX = null;
       }
     }
+  }
 
-    // Check win condition
-    this.checkWinCondition();
+  // ── Street Flood (Khao San only) ──────────────────────────────
+
+  private updateFloodHazard(deltaTime: number): void {
+    const flood = this.mapConfig.hazards.flood!;
+    this.floodTimer += deltaTime;
+
+    const cycleLength = flood.intervalMs + flood.durationMs;
+    const cyclePos = this.floodTimer % cycleLength;
+
+    // Warning phase: 2s before flood activates
+    if (!this.floodWarned && cyclePos >= flood.intervalMs - flood.warningMs && cyclePos < flood.intervalMs) {
+      this.floodWarned = true;
+      this.broadcast("floodWarning", { zones: flood.zones });
+    }
+
+    // Flood activation
+    if (cyclePos >= flood.intervalMs && !this.floodActive) {
+      this.floodActive = true;
+      this.broadcast("floodActive", { zones: flood.zones });
+    }
+
+    // Flood end
+    if (cyclePos < flood.intervalMs && this.floodActive) {
+      this.floodActive = false;
+      this.floodWarned = false;
+      this.broadcast("floodEnd", {});
+    }
   }
 
   // ── Phase Management ──────────────────────────────────────────
@@ -426,6 +492,11 @@ export class GameRoom extends Room<{ state: GameState }> {
     this.state.phase = "playing";
     this.state.timeLeft = MATCH_DURATION;
 
+    // Broadcast party zones at match start so client knows where they are
+    if (this.mapConfig.hazards.partyZones && this.mapConfig.hazards.partyZones.length > 0) {
+      this.broadcast("partyZones", { zones: this.mapConfig.hazards.partyZones });
+    }
+
     // Match timer
     const timerInterval = setInterval(() => {
       if (this.state.phase !== "playing") {
@@ -442,7 +513,7 @@ export class GameRoom extends Room<{ state: GameState }> {
       }
     }, 1000);
 
-    console.log(`[GameRoom] Match started! ${this.state.players.size} players`);
+    console.log(`[GameRoom] Match started! ${this.state.players.size} players on ${this.state.mapId}`);
   }
 
   private checkWinCondition(): void {

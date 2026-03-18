@@ -12,6 +12,7 @@ import {
   leaveLobby,
 } from "../network/ColyseusClient";
 import { Room } from "colyseus.js";
+import type { MapId } from "../map/MapRenderer";
 
 interface LobbyData {
   character: string;
@@ -20,6 +21,17 @@ interface LobbyData {
 }
 
 type LobbyMode = "menu" | "quickmatch" | "private-menu" | "create-room" | "join-room" | "waiting";
+
+interface MapOption {
+  id: MapId;
+  name: string;
+  description: string;
+}
+
+const MAP_OPTIONS: MapOption[] = [
+  { id: "chiangmai", name: "\u0E40\u0E0A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E21\u0E48", description: "Open streets, water truck hazard" },
+  { id: "khaosan", name: "\u0E02\u0E49\u0E32\u0E27\u0E2A\u0E32\u0E23", description: "Narrow alleys, street flood" },
+];
 
 export class LobbyScene extends Phaser.Scene {
   private lobbyData!: LobbyData;
@@ -41,6 +53,11 @@ export class LobbyScene extends Phaser.Scene {
   // Active game room (after transfer or private join)
   private gameRoom: Room | null = null;
 
+  // Map selection
+  private selectedMapIndex = 0;
+  private mapCardBgs: Phaser.GameObjects.Rectangle[] = [];
+  private mapCardLabels: Phaser.GameObjects.Text[] = [];
+
   constructor() {
     super({ key: "LobbyScene" });
   }
@@ -54,6 +71,13 @@ export class LobbyScene extends Phaser.Scene {
     this.roomCodeInput = "";
     this.gameRoom = null;
     this.dynamicObjects = [];
+    this.selectedMapIndex = 0;
+    this.mapCardBgs = [];
+    this.mapCardLabels = [];
+  }
+
+  private getSelectedMapId(): MapId {
+    return MAP_OPTIONS[this.selectedMapIndex].id;
   }
 
   create(): void {
@@ -145,14 +169,77 @@ export class LobbyScene extends Phaser.Scene {
       `${this.lobbyData.nickname} — เลือกโหมด / Choose mode`
     );
 
-    // Quick Match button
+    // ── Map Picker ──────────────────────────────────────
+    const mapLabel = this.add
+      .text(cx, 118, "เลือกแผนที่ — SELECT MAP", {
+        fontSize: "10px",
+        color: "#7db8e8",
+        letterSpacing: 2,
+        fontFamily: "Kanit, sans-serif",
+      })
+      .setOrigin(0.5);
+    this.dynamicObjects.push(mapLabel);
+
+    this.mapCardBgs = [];
+    this.mapCardLabels = [];
+
+    const cardW = 170;
+    const cardH = 72;
+    const cardGap = 16;
+    const totalW = MAP_OPTIONS.length * cardW + (MAP_OPTIONS.length - 1) * cardGap;
+    const startX = cx - totalW / 2 + cardW / 2;
+
+    MAP_OPTIONS.forEach((mapOpt, i) => {
+      const cardX = startX + i * (cardW + cardGap);
+      const cardY = 165;
+      const isSelected = i === this.selectedMapIndex;
+
+      const bg = this.add
+        .rectangle(
+          cardX, cardY, cardW, cardH,
+          isSelected ? 0xf5c842 : 0xffffff,
+          isSelected ? 0.15 : 0.06
+        )
+        .setStrokeStyle(2, isSelected ? 0xf5c842 : 0xffffff, isSelected ? 1 : 0.12)
+        .setInteractive({ useHandCursor: true });
+      this.dynamicObjects.push(bg);
+      this.mapCardBgs.push(bg);
+
+      const name = this.add
+        .text(cardX, cardY - 14, mapOpt.name, {
+          fontSize: "16px",
+          color: isSelected ? "#f5c842" : "#e8f4ff",
+          fontFamily: "Kanit, sans-serif",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5);
+      this.dynamicObjects.push(name);
+      this.mapCardLabels.push(name);
+
+      const desc = this.add
+        .text(cardX, cardY + 10, mapOpt.description, {
+          fontSize: "9px",
+          color: isSelected ? "#f5c842" : "#7db8e8",
+          fontFamily: "Sarabun, sans-serif",
+        })
+        .setOrigin(0.5);
+      this.dynamicObjects.push(desc);
+      this.mapCardLabels.push(desc);
+
+      bg.on("pointerdown", () => {
+        this.selectedMapIndex = i;
+        this.refreshMapPickerUI();
+      });
+    });
+
+    // ── Quick Match button ──────────────────────────────
     const qmBg = this.add
-      .rectangle(cx, 180, 280, 56, 0x3ab5f5, 1)
+      .rectangle(cx, 240, 280, 56, 0x3ab5f5, 1)
       .setInteractive({ useHandCursor: true });
     this.dynamicObjects.push(qmBg);
 
     const qmLabel = this.add
-      .text(cx, 175, "Quick Match", {
+      .text(cx, 235, "Quick Match", {
         fontSize: "18px",
         color: "#0a2540",
         fontFamily: "Kanit, sans-serif",
@@ -162,7 +249,7 @@ export class LobbyScene extends Phaser.Scene {
     this.dynamicObjects.push(qmLabel);
 
     const qmSub = this.add
-      .text(cx, 195, "จับคู่อัตโนมัติ — Auto matchmaking", {
+      .text(cx, 255, "จับคู่อัตโนมัติ — Auto matchmaking", {
         fontSize: "10px",
         color: "#0a2540",
         fontFamily: "Sarabun, sans-serif",
@@ -172,14 +259,14 @@ export class LobbyScene extends Phaser.Scene {
 
     qmBg.on("pointerdown", () => this.startQuickMatch());
 
-    // Private Room button
+    // ── Private Room button ─────────────────────────────
     const prBg = this.add
-      .rectangle(cx, 260, 280, 56, 0xf5c842, 1)
+      .rectangle(cx, 320, 280, 56, 0xf5c842, 1)
       .setInteractive({ useHandCursor: true });
     this.dynamicObjects.push(prBg);
 
     const prLabel = this.add
-      .text(cx, 255, "Private Room", {
+      .text(cx, 315, "Private Room", {
         fontSize: "18px",
         color: "#0a2540",
         fontFamily: "Kanit, sans-serif",
@@ -189,7 +276,7 @@ export class LobbyScene extends Phaser.Scene {
     this.dynamicObjects.push(prLabel);
 
     const prSub = this.add
-      .text(cx, 275, "สร้างหรือเข้าห้องส่วนตัว — Room code", {
+      .text(cx, 335, "สร้างหรือเข้าห้องส่วนตัว — Room code", {
         fontSize: "10px",
         color: "#0a2540",
         fontFamily: "Sarabun, sans-serif",
@@ -200,10 +287,26 @@ export class LobbyScene extends Phaser.Scene {
     prBg.on("pointerdown", () => this.showPrivateMenu());
 
     // Back button
-    this.addBackButton(370, () => {
+    this.addBackButton(420, () => {
       leaveRoom();
       leaveLobby();
       this.scene.start("CharacterScene");
+    });
+  }
+
+  private refreshMapPickerUI(): void {
+    MAP_OPTIONS.forEach((_, i) => {
+      const isSelected = i === this.selectedMapIndex;
+      const bg = this.mapCardBgs[i];
+      if (bg) {
+        bg.setFillStyle(isSelected ? 0xf5c842 : 0xffffff, isSelected ? 0.15 : 0.06);
+        bg.setStrokeStyle(2, isSelected ? 0xf5c842 : 0xffffff, isSelected ? 1 : 0.12);
+      }
+      // Each map has 2 label entries: name and description
+      const nameLabel = this.mapCardLabels[i * 2];
+      const descLabel = this.mapCardLabels[i * 2 + 1];
+      if (nameLabel) nameLabel.setColor(isSelected ? "#f5c842" : "#e8f4ff");
+      if (descLabel) descLabel.setColor(isSelected ? "#f5c842" : "#7db8e8");
     });
   }
 
@@ -219,6 +322,7 @@ export class LobbyScene extends Phaser.Scene {
         nickname: this.lobbyData.nickname,
         character: this.lobbyData.character,
         nationality: this.lobbyData.nationality,
+        mapId: this.getSelectedMapId(),
       });
 
       this.connected = true;
@@ -248,6 +352,7 @@ export class LobbyScene extends Phaser.Scene {
             nickname: this.lobbyData.nickname,
             character: this.lobbyData.character,
             nationality: this.lobbyData.nationality,
+            mapId: this.getSelectedMapId(),
           });
           leaveLobby();
           this.gameRoom = gameRoom;
@@ -276,7 +381,7 @@ export class LobbyScene extends Phaser.Scene {
       this.statusText.setColor("#ff6b6b");
 
       this.time.delayedCall(2000, () => {
-        this.scene.start("GameScene", this.lobbyData);
+        this.scene.start("GameScene", { ...this.lobbyData, mapId: this.getSelectedMapId() });
       });
     }
   }
@@ -366,6 +471,7 @@ export class LobbyScene extends Phaser.Scene {
         nickname: this.lobbyData.nickname,
         character: this.lobbyData.character,
         nationality: this.lobbyData.nationality,
+        mapId: this.getSelectedMapId(),
       });
 
       this.connected = true;
@@ -559,6 +665,7 @@ export class LobbyScene extends Phaser.Scene {
         nickname: this.lobbyData.nickname,
         character: this.lobbyData.character,
         nationality: this.lobbyData.nationality,
+        mapId: this.getSelectedMapId(),
       });
 
       this.connected = true;
@@ -663,6 +770,7 @@ export class LobbyScene extends Phaser.Scene {
           this.scene.start("OnlineGameScene", {
             ...this.lobbyData,
             room,
+            mapId: room.state?.mapId || this.getSelectedMapId(),
           });
         }
       });

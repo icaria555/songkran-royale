@@ -12,6 +12,7 @@ interface LobbyJoinOptions {
   nickname: string;
   character: string;
   nationality: string;
+  mapId?: string;
 }
 
 /**
@@ -23,11 +24,16 @@ interface LobbyJoinOptions {
  */
 export class LobbyRoom extends Room<{ state: LobbyState }> {
   private countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private mapId: string = "chiangmai";
 
   /** Called when the room is first created. */
-  async onCreate(): Promise<void> {
+  async onCreate(options?: Record<string, unknown>): Promise<void> {
     this.setState(new LobbyState());
     this.maxClients = MAX_PLAYERS_PER_ROOM;
+
+    if (options?.mapId && typeof options.mapId === "string") {
+      this.mapId = options.mapId;
+    }
 
     this.onMessage("ready", (client) => {
       this.handleReady(client);
@@ -42,6 +48,11 @@ export class LobbyRoom extends Room<{ state: LobbyState }> {
 
   /** Called when a client joins the lobby. */
   onJoin(client: Client, options: LobbyJoinOptions): void {
+    // First joiner's mapId preference wins (if not already set by room creation)
+    if (options.mapId && this.state.players.size === 0) {
+      this.mapId = options.mapId;
+    }
+
     const player = new LobbyPlayerState();
     player.id = client.sessionId;
     player.nickname = options.nickname || "Anonymous";
@@ -174,8 +185,8 @@ export class LobbyRoom extends Room<{ state: LobbyState }> {
     }
 
     try {
-      // Create a new GameRoom via matchmaker
-      const gameRoom = await matchMaker.createRoom("game", {});
+      // Create a new GameRoom via matchmaker, passing selected map
+      const gameRoom = await matchMaker.createRoom("game", { mapId: this.mapId });
 
       console.log(
         `[LobbyRoom] Created GameRoom ${gameRoom.roomId}, transferring players...`

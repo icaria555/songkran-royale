@@ -126,6 +126,25 @@ export class CharacterScene extends Phaser.Scene {
     lbBtn.on("pointerover", () => lbBtn.setAlpha(0.7));
     lbBtn.on("pointerout", () => lbBtn.setAlpha(1));
 
+    // Battle Pass button (top-right, next to leaderboard)
+    const bpBtn = this.add
+      .text(width - 60, 20, "\u{1F396}", {
+        fontSize: "24px",
+        fontFamily: "Kanit, sans-serif",
+        backgroundColor: "#ffffff10",
+        padding: { x: 8, y: 4 },
+      })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+
+    bpBtn.on("pointerdown", () => {
+      soundManager.init();
+      soundManager.play("button_click");
+      this.scene.start("BattlePassScene");
+    });
+    bpBtn.on("pointerover", () => bpBtn.setAlpha(0.7));
+    bpBtn.on("pointerout", () => bpBtn.setAlpha(1));
+
     // Character cards
     const cardWidth = 140;
     const cardGap = 20;
