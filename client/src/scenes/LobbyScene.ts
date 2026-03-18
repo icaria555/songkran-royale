@@ -11,7 +11,7 @@ import {
   leaveRoom,
   leaveLobby,
 } from "../network/ColyseusClient";
-import { Room } from "@colyseus/sdk";
+import { Room, Callbacks } from "@colyseus/sdk";
 import type { MapId } from "../map/MapRenderer";
 
 interface LobbyData {
@@ -737,14 +737,15 @@ export class LobbyScene extends Phaser.Scene {
   // ── Shared listeners ─────────────────────────────────────────
 
   private wireLobbyListeners(lobby: Room): void {
-    // If the lobby itself has players state
-    if (lobby.state?.players) {
-      lobby.state.players.onAdd(() => this.updatePlayerListFromRoom(lobby));
-      lobby.state.players.onRemove(() => this.updatePlayerListFromRoom(lobby));
+    // If the lobby itself has players state, use v0.17 Callbacks API
+    if ((lobby.state as any)?.players) {
+      const $ = Callbacks.get(lobby) as any;
+      $.onAdd("players", () => this.updatePlayerListFromRoom(lobby), true);
+      $.onRemove("players", () => this.updatePlayerListFromRoom(lobby));
       this.updatePlayerListFromRoom(lobby);
     }
 
-    lobby.onLeave((code) => {
+    lobby.onLeave((_code) => {
       if (this.mode === "quickmatch" && this.scene.isActive("LobbyScene")) {
         // If we got transferred, the lobby leaving is expected
         if (!this.gameRoom) {
@@ -776,11 +777,12 @@ export class LobbyScene extends Phaser.Scene {
     });
 
     if (room.state) {
-      // Player list
+      // Player list — use v0.17 Callbacks API
       const state = room.state as any;
       if (state.players) {
-        state.players.onAdd(() => this.updatePlayerListFromRoom(room));
-        state.players.onRemove(() => this.updatePlayerListFromRoom(room));
+        const $ = Callbacks.get(room) as any;
+        $.onAdd("players", () => this.updatePlayerListFromRoom(room), true);
+        $.onRemove("players", () => this.updatePlayerListFromRoom(room));
         this.updatePlayerListFromRoom(room);
       }
     }

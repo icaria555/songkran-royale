@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { Room } from "@colyseus/sdk";
+import { Room, Callbacks } from "@colyseus/sdk";
 import { RemotePlayer } from "../game/RemotePlayer";
 import { HUD } from "../ui/HUD";
 import { PLAYER_SPEED } from "../game/GameLogic";
@@ -205,8 +205,11 @@ export class OnlineGameScene extends Phaser.Scene {
   // ── Room listener wiring (reusable for reconnect) ────────────
 
   private wireRoomListeners(room: Room): void {
+    // Get the v0.17 Callbacks API for state change tracking
+    const $ = Callbacks.get(room) as any;
+
     // Player added
-    room.state.players.onAdd((player: any, sessionId: string) => {
+    $.onAdd("players", (player: any, sessionId: string) => {
       if (sessionId === this.sessionId) {
         // Local player
         if (!this.localSprite || !this.localSprite.active) {
@@ -235,11 +238,11 @@ export class OnlineGameScene extends Phaser.Scene {
           this.localSprite.setAlpha(player.isAlive ? 1 : 0.3);
         }
 
-        // Listen for state changes on local player
-        player.listen("wetMeter", (value: number) => {
+        // Listen for state changes on local player (v0.17: callbacks.listen(instance, prop, cb))
+        $.listen(player, "wetMeter", (value: number) => {
           this.hud.updateWetMeter(value);
         });
-        player.listen("waterLevel", (value: number) => {
+        $.listen(player, "waterLevel", (value: number) => {
           this.hud.updateWaterTank(value);
           // Water low warning
           if (value < 20 && !this.waterLowPlayed) {
@@ -249,7 +252,7 @@ export class OnlineGameScene extends Phaser.Scene {
             this.waterLowPlayed = false;
           }
         });
-        player.listen("isAlive", (alive: boolean) => {
+        $.listen(player, "isAlive", (alive: boolean) => {
           if (!alive) {
             this.localSprite.setAlpha(0.3);
             eliminationBurst(this, this.localSprite.x, this.localSprite.y);
@@ -273,16 +276,16 @@ export class OnlineGameScene extends Phaser.Scene {
           this.remotePlayers.set(sessionId, remote);
         }
 
-        // Listen for position changes
-        player.listen("x", (x: number) => {
+        // Listen for position changes (v0.17: callbacks.listen(instance, prop, cb))
+        $.listen(player, "x", (x: number) => {
           const r = this.remotePlayers.get(sessionId);
           if (r) r.setTargetPosition(x, player.y);
         });
-        player.listen("y", (y: number) => {
+        $.listen(player, "y", (y: number) => {
           const r = this.remotePlayers.get(sessionId);
           if (r) r.setTargetPosition(player.x, y);
         });
-        player.listen("isAlive", (alive: boolean) => {
+        $.listen(player, "isAlive", (alive: boolean) => {
           const r = this.remotePlayers.get(sessionId);
           if (r) {
             r.setAlive(alive);
@@ -295,7 +298,7 @@ export class OnlineGameScene extends Phaser.Scene {
             soundManager.play("elimination");
           }
         });
-        player.listen("wetMeter", (wet: number) => {
+        $.listen(player, "wetMeter", (wet: number) => {
           if (wet > (player.previousWet || 0)) {
             const r = this.remotePlayers.get(sessionId);
             if (r) {
@@ -308,10 +311,10 @@ export class OnlineGameScene extends Phaser.Scene {
           (player as any).previousWet = wet;
         });
       }
-    });
+    }, true);
 
     // Player removed
-    room.state.players.onRemove((_player: any, sessionId: string) => {
+    $.onRemove("players", (_player: any, sessionId: string) => {
       const remote = this.remotePlayers.get(sessionId);
       if (remote) {
         remote.destroy();
@@ -320,7 +323,7 @@ export class OnlineGameScene extends Phaser.Scene {
     });
 
     // Projectile added
-    room.state.projectiles.onAdd((proj: any, id: string) => {
+    $.onAdd("projectiles", (proj: any, id: string) => {
       const skinId = getSelectedSkin();
       const texKey = skinId === "default" ? "water_bullet" : `water_bullet_${skinId}`;
       const finalTex = this.textures.exists(texKey) ? texKey : "water_bullet";
@@ -330,18 +333,18 @@ export class OnlineGameScene extends Phaser.Scene {
         .setDepth(5);
       this.projectileSprites.set(id, sprite);
 
-      proj.listen("x", (x: number) => {
+      $.listen(proj, "x", (x: number) => {
         const s = this.projectileSprites.get(id);
         if (s) s.x = x;
       });
-      proj.listen("y", (y: number) => {
+      $.listen(proj, "y", (y: number) => {
         const s = this.projectileSprites.get(id);
         if (s) s.y = y;
       });
-    });
+    }, true);
 
     // Projectile removed
-    room.state.projectiles.onRemove((_proj: any, id: string) => {
+    $.onRemove("projectiles", (_proj: any, id: string) => {
       const sprite = this.projectileSprites.get(id);
       if (sprite) {
         splashOnHit(this, sprite.x, sprite.y);
@@ -389,8 +392,8 @@ export class OnlineGameScene extends Phaser.Scene {
       }
     });
 
-    // Game phase changes
-    room.state.listen("phase", (phase: string) => {
+    // Game phase changes (v0.17: callbacks.listen(prop, cb) for root state)
+    $.listen("phase", (phase: string) => {
       if (phase === "countdown") {
         soundManager.play("countdown_tick");
       }
@@ -405,8 +408,9 @@ export class OnlineGameScene extends Phaser.Scene {
         this.waterTruck.destroy();
         if (this.floodHazard) this.floodHazard.destroy();
         if (this.partyZone) this.partyZone.destroy();
-        const winnerId = room.state.winnerId;
-        const winner = room.state.players.get(winnerId);
+        const state = room.state as any;
+        const winnerId = state.winnerId;
+        const winner = state.players?.get(winnerId);
         const winnerName = winner?.nickname || "Unknown";
         const isMe = winnerId === this.sessionId;
 
@@ -415,7 +419,7 @@ export class OnlineGameScene extends Phaser.Scene {
         );
 
         this.time.delayedCall(3000, () => {
-          const localPlayer = room.state.players.get(this.sessionId);
+          const localPlayer = state.players?.get(this.sessionId);
           room.leave();
           this.scene.start("ResultScene", {
             winner: winnerName,
@@ -425,14 +429,14 @@ export class OnlineGameScene extends Phaser.Scene {
             playerWet: localPlayer?.wetMeter || 0,
             playerScore: localPlayer?.score || 0,
             aiWet: 0,
-            timeLeft: room.state.timeLeft,
+            timeLeft: state.timeLeft,
           });
         });
       }
     });
 
     // Timer
-    room.state.listen("timeLeft", (time: number) => {
+    $.listen("timeLeft", (time: number) => {
       this.hud.updateTimer(time);
       // Intensify music in last 30 seconds
       if (time === 30) {
