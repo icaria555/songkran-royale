@@ -1,5 +1,19 @@
 import { Page, expect } from "@playwright/test";
 
+const SERVER_URL = "http://localhost:2567";
+
+/**
+ * Check if the Colyseus game server is reachable.
+ */
+export async function isServerRunning(): Promise<boolean> {
+  try {
+    const res = await fetch(`${SERVER_URL}/health`, { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 const GAME_WIDTH = 800;
 const GAME_HEIGHT = 600;
 
