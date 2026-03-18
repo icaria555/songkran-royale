@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { WEAPON_SKINS } from "../skins/WeaponSkins";
 
 /**
  * BootScene — generates detailed procedural pixel art sprites.
@@ -125,8 +126,9 @@ export class BootScene extends Phaser.Scene {
       this.createCharacterSheet(key, PALETTES[key]);
     }
 
-    // Water projectile
+    // Water projectile (default + per-skin variants)
     this.createWaterBullet();
+    this.createSkinBulletTextures();
 
     // Water station
     this.createWaterStation();
@@ -531,6 +533,34 @@ export class BootScene extends Phaser.Scene {
 
     gfx.generateTexture("water_bullet", s, s);
     gfx.destroy();
+  }
+
+  // ── Skin-specific bullet textures ───────────────────────
+
+  private createSkinBulletTextures(): void {
+    for (const skin of WEAPON_SKINS) {
+      // Skip default — already created as "water_bullet"
+      if (skin.id === "default") continue;
+
+      const s = 8;
+      const gfx = this.make.graphics({ x: 0, y: 0 }, false);
+      const [outer, inner, specular] = skin.colors;
+
+      gfx.fillStyle(outer, 1);
+      gfx.fillCircle(s / 2, s / 2, s / 2);
+
+      gfx.fillStyle(inner, 0.9);
+      gfx.fillCircle(s / 2 - 1, s / 2 - 1, s / 2 - 2);
+
+      gfx.fillStyle(specular, 0.8);
+      gfx.fillRect(2, 2, 2, 2);
+
+      gfx.fillStyle(0xffffff, 0.6);
+      gfx.fillRect(3, 1, 1, 1);
+
+      gfx.generateTexture(`water_bullet_${skin.id}`, s, s);
+      gfx.destroy();
+    }
   }
 
   // ── Water station ────────────────────────────────────────

@@ -33,6 +33,7 @@ import {
   getRefillStationIndex,
 } from "../game/CollisionHandler";
 import { countAlivePlayers, getWinnerId, getLowestWetPlayer } from "../game/WinCondition";
+import { Leaderboard } from "../leaderboard/Leaderboard";
 
 interface InputMessage {
   keys: { w: boolean; a: boolean; s: boolean; d: boolean };
@@ -342,9 +343,12 @@ export class GameRoom extends Room<{ state: GameState }> {
           if (player.wetMeter >= 100) {
             player.isAlive = false;
 
-            // Award score to shooter
+            // Award score and kill to shooter
             const shooter = this.state.players.get(proj.ownerId);
-            if (shooter) shooter.score++;
+            if (shooter) {
+              shooter.score++;
+              shooter.kills++;
+            }
           }
 
           toRemove.push(proj.id);
@@ -461,6 +465,20 @@ export class GameRoom extends Room<{ state: GameState }> {
     console.log(
       `[GameRoom] Match ended! Winner: ${winner?.nickname || "none"} (${winnerId})`
     );
+
+    // Record match results to leaderboard
+    const matchDuration = MATCH_DURATION - this.state.timeLeft;
+    const leaderboard = Leaderboard.getInstance();
+    this.state.players.forEach((player) => {
+      leaderboard.recordMatch({
+        nickname: player.nickname,
+        character: player.character,
+        nationality: player.nationality,
+        kills: player.kills,
+        isWinner: player.id === winnerId,
+        matchDuration,
+      });
+    });
 
     // Auto-dispose room after 10 seconds
     this.clock.setTimeout(() => {

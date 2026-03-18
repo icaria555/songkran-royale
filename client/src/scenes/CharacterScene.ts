@@ -1,5 +1,13 @@
 import Phaser from "phaser";
 import { soundManager } from "../audio/SoundManager";
+import {
+  WEAPON_SKINS,
+  getUnlockedSkins,
+  getSelectedSkin,
+  setSelectedSkin,
+  type PlayerStats,
+  type WeaponSkin,
+} from "../skins/WeaponSkins";
 
 interface CharacterOption {
   key: string;
@@ -55,6 +63,7 @@ export class CharacterScene extends Phaser.Scene {
   private charSprites: Phaser.GameObjects.Sprite[] = [];
   private selectionBoxes: Phaser.GameObjects.Rectangle[] = [];
   private nationTexts: Phaser.GameObjects.Text[] = [];
+  private skinCards: { bg: Phaser.GameObjects.Rectangle; label: Phaser.GameObjects.Text; skin: WeaponSkin }[] = [];
 
   constructor() {
     super({ key: "CharacterScene" });
@@ -97,6 +106,25 @@ export class CharacterScene extends Phaser.Scene {
         fontFamily: "Sarabun, sans-serif",
       })
       .setOrigin(0.5);
+
+    // Leaderboard button (top-right)
+    const lbBtn = this.add
+      .text(width - 20, 20, "\u{1F3C6}", {
+        fontSize: "24px",
+        fontFamily: "Kanit, sans-serif",
+        backgroundColor: "#ffffff10",
+        padding: { x: 8, y: 4 },
+      })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+
+    lbBtn.on("pointerdown", () => {
+      soundManager.init();
+      soundManager.play("button_click");
+      this.scene.start("LeaderboardScene");
+    });
+    lbBtn.on("pointerover", () => lbBtn.setAlpha(0.7));
+    lbBtn.on("pointerout", () => lbBtn.setAlpha(1));
 
     // Character cards
     const cardWidth = 140;
@@ -220,14 +248,17 @@ export class CharacterScene extends Phaser.Scene {
       (txt as any)._index = i;
     });
 
+    // ── Water Gun Skin selector ─────────────────────────────
+    this.buildSkinSelector(cx, 410);
+
     // Nickname input — Phaser text with keyboard capture
     const inputBg = this.add
-      .rectangle(cx, 430, 240, 36, 0xffffff, 0.06)
+      .rectangle(cx, 480, 240, 36, 0xffffff, 0.06)
       .setStrokeStyle(1.5, 0xffffff, 0.12)
       .setInteractive({ useHandCursor: true });
 
     const inputText = this.add
-      .text(cx, 430, "ชื่อผู้เล่น / Nickname", {
+      .text(cx, 480, "ชื่อผู้เล่น / Nickname", {
         fontSize: "14px",
         color: "#7db8e8",
         fontFamily: "Kanit, sans-serif",
@@ -272,7 +303,7 @@ export class CharacterScene extends Phaser.Scene {
     });
 
     // CTA Button
-    const ctaY = 490;
+    const ctaY = 530;
     const ctaBg = this.add
       .rectangle(cx, ctaY, 240, 48, 0xf5c842, 1)
       .setInteractive({ useHandCursor: true });
@@ -327,6 +358,114 @@ export class CharacterScene extends Phaser.Scene {
       bg.setFillStyle(isSelected ? 0xf5c842 : 0xffffff, isSelected ? 0.15 : 0.06);
       bg.setStrokeStyle(1, isSelected ? 0xf5c842 : 0xffffff, isSelected ? 1 : 0.12);
       txt.setColor(isSelected ? "#f5c842" : "#7db8e8");
+    });
+  }
+
+  private getPlayerStats(): PlayerStats {
+    try {
+      const raw = localStorage.getItem("songkran_player_stats");
+      if (raw) return JSON.parse(raw) as PlayerStats;
+    } catch {
+      // ignore
+    }
+    return { wins: 0, games: 0, kills: 0 };
+  }
+
+  private buildSkinSelector(cx: number, baseY: number): void {
+    this.add
+      .text(cx, baseY - 16, "\u{1F52B} Water Gun — SKIN", {
+        fontSize: "10px",
+        color: "#7db8e8",
+        letterSpacing: 3,
+        fontFamily: "Kanit, sans-serif",
+      })
+      .setOrigin(0.5);
+
+    const stats = this.getPlayerStats();
+    const unlocked = getUnlockedSkins(stats);
+    const unlockedIds = new Set(unlocked.map((s) => s.id));
+    const selectedId = getSelectedSkin();
+
+    const skinW = 100;
+    const skinH = 38;
+    const skinGap = 8;
+    const skinsPerRow = 6;
+    const totalRowW = skinsPerRow * skinW + (skinsPerRow - 1) * skinGap;
+    const rowStartX = cx - totalRowW / 2 + skinW / 2;
+
+    this.skinCards = [];
+
+    WEAPON_SKINS.forEach((skin, i) => {
+      const col = i % skinsPerRow;
+      const row = Math.floor(i / skinsPerRow);
+      const sx = rowStartX + col * (skinW + skinGap);
+      const sy = baseY + row * (skinH + skinGap);
+
+      const isUnlocked = unlockedIds.has(skin.id);
+      const isSelected = skin.id === selectedId && isUnlocked;
+
+      const bg = this.add
+        .rectangle(
+          sx, sy, skinW, skinH,
+          isSelected ? 0xf5c842 : 0xffffff,
+          isSelected ? 0.15 : 0.05
+        )
+        .setStrokeStyle(
+          1,
+          isSelected ? 0xf5c842 : isUnlocked ? 0xffffff : 0x555555,
+          isSelected ? 1 : 0.15
+        )
+        .setInteractive({ useHandCursor: isUnlocked });
+
+      // Color swatch (small circle showing projectile color)
+      const swatchColor = isUnlocked ? skin.colors[1] : 0x555555;
+      this.add.circle(sx - skinW / 2 + 12, sy, 5, swatchColor, isUnlocked ? 1 : 0.4);
+
+      const label = this.add
+        .text(sx + 4, sy, isUnlocked ? skin.name : "\u{1F512} " + skin.unlockText, {
+          fontSize: "9px",
+          color: isUnlocked ? (isSelected ? "#f5c842" : "#e8f4ff") : "#555555",
+          fontFamily: "Kanit, sans-serif",
+        })
+        .setOrigin(0, 0.5);
+
+      this.skinCards.push({ bg, label, skin });
+
+      if (isUnlocked) {
+        bg.on("pointerdown", () => {
+          soundManager.init();
+          soundManager.play("button_click");
+          setSelectedSkin(skin.id);
+          this.refreshSkinUI();
+        });
+      }
+    });
+  }
+
+  private refreshSkinUI(): void {
+    const stats = this.getPlayerStats();
+    const unlocked = getUnlockedSkins(stats);
+    const unlockedIds = new Set(unlocked.map((s) => s.id));
+    const selectedId = getSelectedSkin();
+
+    this.skinCards.forEach(({ bg, label, skin }) => {
+      const isUnlocked = unlockedIds.has(skin.id);
+      const isSelected = skin.id === selectedId && isUnlocked;
+
+      bg.setFillStyle(
+        isSelected ? 0xf5c842 : 0xffffff,
+        isSelected ? 0.15 : 0.05
+      );
+      bg.setStrokeStyle(
+        1,
+        isSelected ? 0xf5c842 : isUnlocked ? 0xffffff : 0x555555,
+        isSelected ? 1 : 0.15
+      );
+
+      if (isUnlocked) {
+        label.setText(skin.name);
+        label.setColor(isSelected ? "#f5c842" : "#e8f4ff");
+      }
     });
   }
 

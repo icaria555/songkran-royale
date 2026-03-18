@@ -16,6 +16,7 @@ import {
 import { MapRenderer } from "../map/MapRenderer";
 import { WaterTruck } from "../game/WaterTruck";
 import { TouchControls, isMobile } from "../ui/TouchControls";
+import { getSelectedSkin } from "../skins/WeaponSkins";
 
 interface OnlineGameData {
   character: string;
@@ -301,8 +302,11 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Projectile added
     room.state.projectiles.onAdd((proj: any, id: string) => {
+      const skinId = getSelectedSkin();
+      const texKey = skinId === "default" ? "water_bullet" : `water_bullet_${skinId}`;
+      const finalTex = this.textures.exists(texKey) ? texKey : "water_bullet";
       const sprite = this.add
-        .sprite(proj.x, proj.y, "water_bullet")
+        .sprite(proj.x, proj.y, finalTex)
         .setScale(2)
         .setDepth(5);
       this.projectileSprites.set(id, sprite);

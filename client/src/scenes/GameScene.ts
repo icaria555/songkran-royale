@@ -15,6 +15,7 @@ import {
 import { MapRenderer } from "../map/MapRenderer";
 import { WaterTruck } from "../game/WaterTruck";
 import { TouchControls, isMobile } from "../ui/TouchControls";
+import { getSelectedSkin } from "../skins/WeaponSkins";
 
 interface GameData {
   character: string;
@@ -429,8 +430,11 @@ export class GameScene extends Phaser.Scene {
     let bullet = group.getFirstDead(false) as Phaser.Physics.Arcade.Sprite | null;
 
     if (!bullet) {
+      const skinId = getSelectedSkin();
+      const texKey = skinId === "default" ? "water_bullet" : `water_bullet_${skinId}`;
+      const finalTex = this.textures.exists(texKey) ? texKey : "water_bullet";
       bullet = this.physics.add
-        .sprite(x, y, "water_bullet")
+        .sprite(x, y, finalTex)
         .setScale(2)
         .setDepth(5);
       group.add(bullet);

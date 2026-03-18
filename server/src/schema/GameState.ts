@@ -21,6 +21,7 @@ export class PlayerState extends Schema {
   @type("float32") wetMeter: number = 0;
   @type("boolean") isAlive: boolean = true;
   @type("int32") score: number = 0;
+  @type("int32") kills: number = 0;
   @type("boolean") ready: boolean = false;
 
   // Server-side only (not synced)
