@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { Room } from "colyseus.js";
+import { Room } from "@colyseus/sdk";
 import { RemotePlayer } from "../game/RemotePlayer";
 import { HUD } from "../ui/HUD";
 import { PLAYER_SPEED } from "../game/GameLogic";

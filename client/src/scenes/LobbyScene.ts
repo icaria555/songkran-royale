@@ -11,7 +11,7 @@ import {
   leaveRoom,
   leaveLobby,
 } from "../network/ColyseusClient";
-import { Room } from "colyseus.js";
+import { Room } from "@colyseus/sdk";
 import type { MapId } from "../map/MapRenderer";
 
 interface LobbyData {
