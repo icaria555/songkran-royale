@@ -127,7 +127,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(
       this.projectiles,
       this.ai.sprite,
-      (_aiSprite, bullet) => {
+      (bullet, _aiSprite) => {
         (bullet as Phaser.Physics.Arcade.Sprite).disableBody(true, true);
         this.ai.takeDamage(true);
         splashOnHit(this, this.ai.sprite.x, this.ai.sprite.y);
@@ -148,7 +148,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(
       this.aiProjectiles,
       this.player.sprite,
-      (_playerSprite, bullet) => {
+      (bullet, _playerSprite) => {
         (bullet as Phaser.Physics.Arcade.Sprite).disableBody(true, true);
         this.player.takeDamage(true);
         splashOnHit(this, this.player.sprite.x, this.player.sprite.y);
@@ -169,12 +169,12 @@ export class GameScene extends Phaser.Scene {
     );
 
     // Bullets hit walls
-    this.physics.add.collider(this.projectiles, this.mapRenderer.walls, (_wall, bullet) => {
+    this.physics.add.collider(this.projectiles, this.mapRenderer.walls, (bullet, _wall) => {
       const b = bullet as Phaser.Physics.Arcade.Sprite;
       splashOnHit(this, b.x, b.y);
       b.disableBody(true, true);
     });
-    this.physics.add.collider(this.aiProjectiles, this.mapRenderer.walls, (_wall, bullet) => {
+    this.physics.add.collider(this.aiProjectiles, this.mapRenderer.walls, (bullet, _wall) => {
       const b = bullet as Phaser.Physics.Arcade.Sprite;
       splashOnHit(this, b.x, b.y);
       b.disableBody(true, true);
