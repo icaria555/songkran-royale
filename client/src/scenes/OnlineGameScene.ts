@@ -59,6 +59,9 @@ export class OnlineGameScene extends Phaser.Scene {
   private aimAngle = 0;
   private inputSendTimer = 0;
   private readonly INPUT_SEND_RATE = 1000 / 30; // 30Hz input send
+  private localPrevX = 0;
+  private localPrevY = 0;
+  private localAlive = true;
 
   private gameOver = false;
 
@@ -253,6 +256,7 @@ export class OnlineGameScene extends Phaser.Scene {
           }
         });
         $.listen(player, "isAlive", (alive: boolean) => {
+          this.localAlive = alive;
           if (!alive) {
             this.localSprite.setAlpha(0.3);
             eliminationBurst(this, this.localSprite.x, this.localSprite.y);
@@ -635,6 +639,24 @@ export class OnlineGameScene extends Phaser.Scene {
         worldPoint.y
       );
     }
+
+    // Animate local sprite
+    const charKey = this.gameData.character;
+    if (!this.localAlive) {
+      this.localSprite.anims.play(`${charKey}_death`, true);
+    } else {
+      const dx = this.localSprite.x - this.localPrevX;
+      const dy = this.localSprite.y - this.localPrevY;
+      const moving = Math.abs(dx) + Math.abs(dy) > 0.5;
+      if (moving) {
+        this.localSprite.anims.play(`${charKey}_walk`, true);
+      } else {
+        this.localSprite.anims.play(`${charKey}_idle`, true);
+      }
+      this.localSprite.setFlipX(Math.abs(this.aimAngle) > Math.PI / 2);
+    }
+    this.localPrevX = this.localSprite.x;
+    this.localPrevY = this.localSprite.y;
 
     // Send input to server at throttled rate
     this.inputSendTimer += delta;

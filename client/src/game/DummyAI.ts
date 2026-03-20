@@ -42,6 +42,7 @@ export class DummyAI {
       this.sprite.setVelocity(0, 0);
       this.sprite.setAlpha(0.3);
       this.label.setAlpha(0.3);
+      this.sprite.anims.play("ai_death", true);
       return null;
     }
 
@@ -76,8 +77,14 @@ export class DummyAI {
       this.moveDir.y * speed
     );
 
+    // Flip sprite based on movement direction
+    if (this.moveDir.x !== 0) {
+      this.sprite.setFlipX(this.moveDir.x < 0);
+    }
+
     // Shoot toward player periodically
     this.shootTimer -= dt;
+    let shotAngle: number | null = null;
     if (this.shootTimer <= 0 && this.waterLevel >= 5) {
       this.shootTimer = 0.8 + Math.random() * 1.5;
       const dist = Phaser.Math.Distance.Between(
@@ -89,13 +96,30 @@ export class DummyAI {
 
       if (dist < 300 && this.waterLevel >= 5) {
         this.waterLevel = Math.max(0, this.waterLevel - 5);
-        return Phaser.Math.Angle.Between(
+        shotAngle = Phaser.Math.Angle.Between(
           this.sprite.x,
           this.sprite.y,
           playerX,
           playerY
         );
+
+        // Brief shoot animation
+        this.sprite.anims.play("ai_shoot", true);
+        this.scene.time.delayedCall(150, () => {
+          if (this.sprite.active && this.isAlive) {
+            this.sprite.anims.play("ai_walk", true);
+          }
+        });
+        return shotAngle;
       }
+    }
+
+    // Walk/idle animation
+    const moving = this.sprite.body!.velocity.length() > 10;
+    if (moving) {
+      this.sprite.anims.play("ai_walk", true);
+    } else {
+      this.sprite.anims.play("ai_idle", true);
     }
 
     return null;

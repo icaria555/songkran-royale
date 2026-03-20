@@ -25,6 +25,7 @@ export class Player {
   };
   private aimAngle = 0;
   private touchActive = false;
+  private isShooting = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -101,6 +102,7 @@ export class Player {
     if (!this.isAlive) {
       this.sprite.setVelocity(0, 0);
       this.sprite.setAlpha(0.3);
+      this.sprite.anims.play(`${this.character}_death`, true);
       return;
     }
 
@@ -139,6 +141,21 @@ export class Player {
       );
     }
 
+    // Flip sprite based on aim direction
+    this.sprite.setFlipX(Math.abs(this.aimAngle) > Math.PI / 2);
+
+    // Play animations based on state
+    if (this.isShooting) {
+      this.sprite.anims.play(`${this.character}_shoot`, true);
+    } else {
+      const moving = this.sprite.body!.velocity.length() > 10;
+      if (moving) {
+        this.sprite.anims.play(`${this.character}_walk`, true);
+      } else {
+        this.sprite.anims.play(`${this.character}_idle`, true);
+      }
+    }
+
     // Update label position
     const label = this.scene.children.getByName(
       "playerLabel"
@@ -155,6 +172,13 @@ export class Player {
   tryShoot(): boolean {
     if (!this.isAlive || !canShoot(this.waterLevel)) return false;
     this.waterLevel = applyShot(this.waterLevel);
+
+    // Brief shoot animation
+    this.isShooting = true;
+    this.scene.time.delayedCall(150, () => {
+      this.isShooting = false;
+    });
+
     return true;
   }
 
